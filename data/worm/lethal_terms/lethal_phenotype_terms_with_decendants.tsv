@@ -1,0 +1,148 @@
+ID	Name
+WBPhenotype:0000040	one cell arrest early emb
+WBPhenotype:0000044	egg size defective early emb
+WBPhenotype:0000050	embryonic lethal
+WBPhenotype:0000052	maternal effect lethal emb
+WBPhenotype:0000053	paralyzed arrested elongation two fold
+WBPhenotype:0000054	larval lethal
+WBPhenotype:0000057	early larval lethal
+WBPhenotype:0000058	late larval lethal
+WBPhenotype:0000060	adult lethal
+WBPhenotype:0000062	lethal
+WBPhenotype:0000063	terminal arrest variable
+WBPhenotype:0000064	sexually dimorphic lethality
+WBPhenotype:0000065	X0 lethal
+WBPhenotype:0000066	XX lethal
+WBPhenotype:0000116	mid larval lethal
+WBPhenotype:0000117	L1 lethal
+WBPhenotype:0000118	L2 lethal
+WBPhenotype:0000152	no cleavage furrow first division early emb
+WBPhenotype:0000160	cleavage furrow not discrete early emb
+WBPhenotype:0000270	pleiotropic defects severe early emb
+WBPhenotype:0000351	failure to hatch
+WBPhenotype:0000365	embryo osmotic integrity defective early emb
+WBPhenotype:0000411	rod like larval lethal
+WBPhenotype:0000419	L3 lethal
+WBPhenotype:0000628	spindle assembly defective early emb
+WBPhenotype:0000748	asymmetric cell division defective early emb
+WBPhenotype:0000759	spindle defective early emb
+WBPhenotype:0000760	spindle orientation defective early emb
+WBPhenotype:0000761	spindle position orientation defective early emb
+WBPhenotype:0000762	spindle position defective early emb
+WBPhenotype:0000765	spindle elongation integrity defective early emb
+WBPhenotype:0000767	integrity of membranous organelles defective early emb
+WBPhenotype:0000768	cytoplasmic structure defective early emb
+WBPhenotype:0000769	cytoplasmic appearance defective early emb
+WBPhenotype:0000771	centrosome attachment defective early emb
+WBPhenotype:0000772	sister chromatid segregation defective early emb
+WBPhenotype:0000776	passage through meiosis defective early emb
+WBPhenotype:0000777	polar body extrusion defective early emb
+WBPhenotype:0001003	L4 lethal
+WBPhenotype:0001007	other abnormality early emb
+WBPhenotype:0001011	complex phenotype early emb
+WBPhenotype:0001018	cytokinesis variant emb
+WBPhenotype:0001020	embryonic lethal late emb
+WBPhenotype:0001026	nuclear morphology variation early emb
+WBPhenotype:0001027	nuclear position defective early emb
+WBPhenotype:0001030	pronuclear envelope defective early emb
+WBPhenotype:0001031	pronuclear migration reduced early emb
+WBPhenotype:0001034	pronuclear nuclear appearance defective early emb
+WBPhenotype:0001035	nuclear appearance number defective early emb
+WBPhenotype:0001041	meiosis defective early emb
+WBPhenotype:0001043	interphase entry defective early emb
+WBPhenotype:0001044	cortical dynamics defective early emb
+WBPhenotype:0001077	chromosome segregation variant karyomeres early emb
+WBPhenotype:0001078	cytokinesis defective early emb
+WBPhenotype:0001079	cytoplasmic dynamics defective early emb
+WBPhenotype:0001080	excessive blebbing early emb
+WBPhenotype:0001081	cytoplasmic morphology defective early emb
+WBPhenotype:0001082	large cytoplasmic granules early emb
+WBPhenotype:0001083	multiple cytoplasmic cavities early emb
+WBPhenotype:0001100	early embryonic lethal
+WBPhenotype:0001102	mitotic spindle defective early emb
+WBPhenotype:0001103	spindle absent early emb
+WBPhenotype:0001104	P0 spindle absent early emb
+WBPhenotype:0001105	P0 spindle position defective early emb
+WBPhenotype:0001106	spindle orientation variant AB or P1 early emb
+WBPhenotype:0001107	spindle rotation defective early emb
+WBPhenotype:0001108	P0 spindle rotation failure early emb
+WBPhenotype:0001109	P0 spindle rotation delayed early emb
+WBPhenotype:0001110	aster defective early emb
+WBPhenotype:0001111	aster AB defective early emb
+WBPhenotype:0001112	aster AB resembles P1 aster early emb
+WBPhenotype:0001113	P1 aster defective early emb
+WBPhenotype:0001114	cell cycle defective early emb
+WBPhenotype:0001115	cell cycle timing defective early emb
+WBPhenotype:0001116	absolute cell cycle timing defective early emb
+WBPhenotype:0001117	cell cell contacts defective early emb
+WBPhenotype:0001118	cell position defective early emb
+WBPhenotype:0001119	cell cycle slow early emb
+WBPhenotype:0001120	relative cell cycle timing defective early emb
+WBPhenotype:0001121	exaggerated asynchrony early emb
+WBPhenotype:0001122	reversed asynchrony early emb
+WBPhenotype:0001123	synchronous second division early emb
+WBPhenotype:0001124	ABa ABp EMS synchronous division early emb
+WBPhenotype:0001125	P2 EMS synchronous division early emb
+WBPhenotype:0001126	cell cell contacts variant four emb
+WBPhenotype:0001127	EMS anterior extension fails early emb
+WBPhenotype:0001128	EMS anterior extension extreme early emb
+WBPhenotype:0001129	cleavage furrow defective early emb
+WBPhenotype:0001130	cytokinesis fails early emb
+WBPhenotype:0001131	loose mitotic furrow early emb
+WBPhenotype:0001132	ectopic cleavage furrows early emb
+WBPhenotype:0001133	division axis defective early emb
+WBPhenotype:0001134	Aba ABp division axis defective early emb
+WBPhenotype:0001135	embryonic morphology defective early emb
+WBPhenotype:0001137	embryos small early emb
+WBPhenotype:0001138	nucleus defective early emb
+WBPhenotype:0001139	nuclear envelope assembly variant early emb
+WBPhenotype:0001141	nucleus reforms cell division remnant early emb
+WBPhenotype:0001142	nuclear number defective early emb
+WBPhenotype:0001143	multiple nuclei early emb
+WBPhenotype:0001144	polar body number size early emb
+WBPhenotype:0001145	polar body number defective early emb
+WBPhenotype:0001146	polar body size defective early emb
+WBPhenotype:0001147	polar body defective early emb
+WBPhenotype:0001148	polar body reabsorbed early emb
+WBPhenotype:0001150	polar body reabsorbed one two early emb
+WBPhenotype:0001151	pronucleus centrosomes defective early emb
+WBPhenotype:0001152	pronuclear migration defective early emb
+WBPhenotype:0001153	pronuclear migration failure early emb
+WBPhenotype:0001154	paternal pronucleus migrates early emb
+WBPhenotype:0001155	pronuclei meet centrally early emb
+WBPhenotype:0001156	pronuclear size defective early emb
+WBPhenotype:0001157	pronuclear breakdown defective early emb
+WBPhenotype:0001158	pronuclear breakdown asynchronous early emb
+WBPhenotype:0001159	pronuclear morphology defective early emb
+WBPhenotype:0001160	pronuclear envelope morphology defective early emb
+WBPhenotype:0001161	maternal pronucleus indistinct early emb
+WBPhenotype:0001162	pronuclear number defective early emb
+WBPhenotype:0001163	pronucleus formation failure early emb
+WBPhenotype:0001164	excess pronucleus early emb
+WBPhenotype:0001165	excess maternal pronucleus early emb
+WBPhenotype:0001166	excess paternal pronucleus variant centrosome early emb
+WBPhenotype:0001167	pseudocleavage defective early emb
+WBPhenotype:0001168	pseudocleavage absent early emb
+WBPhenotype:0001169	pseudocleavage exaggerated early emb
+WBPhenotype:0001176	one cell shape defective early emb
+WBPhenotype:0001177	embryo osmotic pressure sensitive early emb
+WBPhenotype:0001178	egg integrity defective early emb
+WBPhenotype:0001185	embryonic developmental delay early emb
+WBPhenotype:0001186	embryo delayed at pronuclear contact early emb
+WBPhenotype:0001187	division EMS before P2 early emb
+WBPhenotype:0001216	meiosis metaphase to anaphase transition block
+WBPhenotype:0001343	meiotic spindle defective early emb
+WBPhenotype:0001353	centration defective early emb
+WBPhenotype:0001536	embryonic cell patterning variant
+WBPhenotype:0001580	nuclear envelope breakdown variant
+WBPhenotype:0001642	cell cleavage variant emb
+WBPhenotype:0001832	nuclear pore variant
+WBPhenotype:0001867	mitotic spindle asters defective early emb
+WBPhenotype:0001885	cleavage furrow initiation defective early emb
+WBPhenotype:0001886	cleavage furrow termination defective early emb
+WBPhenotype:0001895	parental chromosome mixing defective
+WBPhenotype:0001959	spindle pole pulling force variant
+WBPhenotype:0001960	spindle oscillation variant
+WBPhenotype:0002004	actomyosin contractility defective
+WBPhenotype:0002007	cortical blebs present
+WBPhenotype:0002068	astral microtubule asymmetry defective

@@ -1,0 +1,15 @@
+WBPhenotype:0000062    lethal
+WBPhenotype:0000050    embryonic lethal
+WBPhenotype:0000052    maternal effect lethal embryonic
+WBPhenotype:0000053    paralyzed arrested elongation two fold
+WBPhenotype:0000054    larval lethal
+WBPhenotype:0000057    early larval lethal
+WBPhenotype:0000058    late larval lethal
+WBPhenotype:0000060    adult lethal
+WBPhenotype:0000063    terminal arrest variable
+WBPhenotype:0000064    sexually dimorphic lethality
+WBPhenotype:0000065    X0 lethal
+WBPhenotype:0000066    XX lethal
+WBPhenotype:0000116    mid larval lethal
+WBPhenotype:0000117    L1 lethal
+WBPhenotype:0000118    L2 lethal

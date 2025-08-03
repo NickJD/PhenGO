@@ -2,9 +2,9 @@ import codecs
 import re
 import gzip
 
-Year = './2016'
+Year = './2017'
 
-GO_OBO_File = Year + '/go_2016-01-01.obo.gz'
+GO_OBO_File = Year + '/go_2017-05-01.obo.gz'
 GO_Child_Parent_File = Year + '/GO_Children&Parents.txt'
 GraphInput = Year + '/GO_Children&Parents.txt'
 GraphOutput = Year + '/GO_Nodes.txt'
