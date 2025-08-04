@@ -4,6 +4,8 @@ import gzip
 import networkx as nx
 import json
 
+#from biom.assets.exercise_api import obs_without_top
+
 
 def define_graph_from_file(EdgesInput):
     # Graph creation
@@ -59,11 +61,14 @@ def getTerm(stream):
                 block.append(line.strip())
     return block
 
-def parseTagValue(term):
+def parseTagValue(term, obsolete_go_terms):
     data = {}
     for line in term:
         tag = line.split(': ', 1)[0]
         value = line.split(': ', 1)[1]
+        if tag == 'is_obsolete' and value == 'true':
+            obsolete_go_terms.append(term[0].split(': ')[1])  # Store the ID of the obsolete term
+            return None  # Skip obsolete terms
         if not tag in data:
             data[tag] = []
         data[tag].append(value)
@@ -76,11 +81,14 @@ def obo_to_graph(output_dir, go_obo_file):
     refined_nodes_output = output_dir + '/Unique_GO_Nodes.txt'
     terms = {}
     getTerm(obo_file)
+    obsolete_go_terms = []
     # infinite loop to go through the obo file.
     # Breaks when the term returned is empty, indicating end of file
     while 1:
-        term = parseTagValue(getTerm(obo_file))
-        if len(term) != 0:
+        term = parseTagValue(getTerm(obo_file),obsolete_go_terms)
+        if term is None:
+            continue  # Skip obsolete terms
+        elif len(term) != 0:
             termID = term['id'][0]
             alt_ids = term.get('alt_id', [])
 
@@ -106,6 +114,7 @@ def obo_to_graph(output_dir, go_obo_file):
                         if parent not in terms:
                             terms[parent] = {'p': [], 'c': []}
                         terms[parent]['c'].append(alt_id)
+
         else:
             break
     # while 1:
@@ -153,4 +162,4 @@ def obo_to_graph(output_dir, go_obo_file):
                     attribute_list.append("@attribute " + go_t + "{0,1}")
 
     gr = define_graph_from_file( f"{output_dir}/GO_Children&Parents.txt")
-    return gr, unique_nodes
+    return gr, unique_nodes, obsolete_go_terms

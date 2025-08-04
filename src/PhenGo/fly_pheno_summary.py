@@ -1,12 +1,3 @@
-#!/usr/bin/env python3
-"""
-summarise_flybase_phenotypes_no_pandas.py
-
-Parse FlyBase allele phenotype data (tab-delimited text),
-summarise per gene, all using pure Python (no pandas).
-
-Author: [Your Name]
-"""
 
 import argparse
 import csv

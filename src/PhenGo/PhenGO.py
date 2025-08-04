@@ -12,6 +12,7 @@ from phenotype_handling import *
 from go_handling import *
 
 
+
 def removed_unused_gos(vi_inviable_genes, unique_go_terms):
     # collect *all* GOs actually used in your genes
     used_gos = set()
@@ -36,7 +37,7 @@ def removed_unused_gos(vi_inviable_genes, unique_go_terms):
         }
     return filtered_genes, filtered_go_terms
 
-def Incidents(options, Up, Seen, gr):
+def Incidents(options, Up, Seen, gr, obsolete_go_terms):
     i = 0
     for key in Up:
         if key not in Seen:
@@ -45,8 +46,11 @@ def Incidents(options, Up, Seen, gr):
                 try:
                     Up.extend(gr.predecessors(key))
                 except (KeyError, ValueError, nx.exception.NetworkXError):
-                    print(
-                        f"Error: The gene association file '{options.gene_association_file}' contains GO term '{key}' not present in the GO OBO file '{options.go_obo_file}'.")
+                    if key in obsolete_go_terms:
+                        print(f"Warning: GO term '{key}' is obsolete but present in the gene association file. Skipping.")
+                        Seen.append(key)
+                        continue
+                    print(f"Error: The gene association file '{options.gene_association_file}' contains GO term '{key}' not present in the GO OBO file '{options.go_obo_file}'.")
                     print("Please ensure both files are consistent. Exiting.")
                     sys.exit(1)
                 Seen.append(key)
@@ -68,7 +72,7 @@ def Duplicates(Up):
             NodesSeen.append(node)
     return NewUp
 
-def assign_go_to_vector(options, vi_inviable_genes, gr, unique_go_terms):
+def assign_go_to_vector(options, vi_inviable_genes, gr, unique_go_terms, obsolete_go_terms):
     binVec = [0] * len(unique_go_terms)
     Missing = []
     debug = 0
@@ -90,7 +94,7 @@ def assign_go_to_vector(options, vi_inviable_genes, gr, unique_go_terms):
                 Nodes = []
                 while Continue == True:
 
-                    if Incidents(options, Up,Seen,gr) == False:
+                    if Incidents(options, Up, Seen, gr, obsolete_go_terms) == False:
                         for node in Up:
                             if node not in Nodes:
                                 Nodes.append(node)
@@ -195,7 +199,7 @@ def write_arff_output(vi_inviable_genes, filtered_go_terms, output_file):
             f.write(f"{gene},{bin_vec},{status}\n")
 
 def main():
-    parser = argparse.ArgumentParser(description=f"PhenGO {PhenGO_VERSION} - Convert phenotype and go data to ARFF format")
+    parser = argparse.ArgumentParser(description=f"PhenGO {PhenGO_VERSION} - Convert phenotype and GO data to ARFF format")
     parser._action_groups.pop()
     required = parser.add_argument_group('Required Options')
     required.add_argument('-species', dest="species", required=True, help='Species tag (e.g., fly, yeast)')
@@ -298,9 +302,10 @@ def main():
         elif options.species.lower() == "mouse":
             vi_inviable_genes = get_viability_go_data_mouse(file, vi_inviable_genes)
 
-    gr, unique_go_terms = obo_to_graph(options.output_dir, options.go_obo_file)
+    gr, unique_go_terms, obsolete_go_terms = obo_to_graph(options.output_dir, options.go_obo_file)
 
-    vi_inviable_genes, go_terms, Func = assign_go_to_vector(options, vi_inviable_genes, gr, unique_go_terms)
+
+    vi_inviable_genes, go_terms, Func = assign_go_to_vector(options, vi_inviable_genes, gr, unique_go_terms, obsolete_go_terms)
 
     # Filter out unused GO terms
     if options.filter_unused_gos == True:

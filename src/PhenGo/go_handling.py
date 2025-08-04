@@ -21,6 +21,9 @@ def get_viability_go_data_yeast(gene_association_file, vi_inviable_genes):
     for gene, value in vi_inviable_genes.items():
         vi_inviable_genes[gene] = {"status": str(value[0]), "go_list": list(map(str, value[1]))}
 
+    print(f"Species: yeast")
+    print(f"Lethal genes with GO terms: {sum(1 for v in vi_inviable_genes.values() if v['status'] == 'lethal')}")
+    print(f"Viable genes with GO terms: {sum(1 for v in vi_inviable_genes.values() if v['status'] == 'viable')}")
     return vi_inviable_genes
 
 def get_viability_go_data_fly(options, gene_association_file, vi_inviable_genes):
@@ -54,7 +57,9 @@ def get_viability_go_data_fly(options, gene_association_file, vi_inviable_genes)
                 valid_genes.add(row[0])
     vi_inviable_genes = {gene: value for gene, value in vi_inviable_genes.items() if gene in valid_genes}
 
-
+    print(f"Species: fly")
+    print(f"Lethal genes with GO terms: {sum(1 for v in vi_inviable_genes.values() if v['status'] == 'lethal')}")
+    print(f"Viable genes with GO terms: {sum(1 for v in vi_inviable_genes.values() if v['status'] == 'viable')}")
     return vi_inviable_genes
 
 def get_viability_go_data_fish(gene_association_file, vi_inviable_genes):
@@ -62,7 +67,7 @@ def get_viability_go_data_fish(gene_association_file, vi_inviable_genes):
     input = gzip.open(gene_association_file, 'rt', encoding='utf-8')
     input = csv.reader(input, delimiter='\t')
     for row in input:
-        if row[0] == "ZFIN":  # FlyBase = FB
+        if row[0] == "ZFIN":
             gene= row[2]
             go = row[4]
             if gene in vi_inviable_genes:
@@ -77,6 +82,9 @@ def get_viability_go_data_fish(gene_association_file, vi_inviable_genes):
     for gene, value in vi_inviable_genes.items():
         vi_inviable_genes[gene] = {"status": str(value[0]), "go_list": list(map(str, value[1]))}
 
+    print(f"Species: fish")
+    print(f"Lethal genes with GO terms: {sum(1 for v in vi_inviable_genes.values() if v['status'] == 'lethal')}")
+    print(f"Viable genes with GO terms: {sum(1 for v in vi_inviable_genes.values() if v['status'] == 'viable')}")
     return vi_inviable_genes
 
 def get_viability_go_data_worm(gene_association_file, vi_inviable_genes):
@@ -99,6 +107,9 @@ def get_viability_go_data_worm(gene_association_file, vi_inviable_genes):
     for gene, value in vi_inviable_genes.items():
         vi_inviable_genes[gene] = {"status": str(value[0]), "go_list": list(map(str, value[1]))}
 
+    print(f"Species: worm")
+    print(f"Lethal genes with GO terms: {sum(1 for v in vi_inviable_genes.values() if v['status'] == 'lethal')}")
+    print(f"Viable genes with GO terms: {sum(1 for v in vi_inviable_genes.values() if v['status'] == 'viable')}")
     return vi_inviable_genes
 
 def get_viability_go_data_mouse(gene_association_file, vi_inviable_genes):
@@ -107,8 +118,8 @@ def get_viability_go_data_mouse(gene_association_file, vi_inviable_genes):
     input = csv.reader(input, delimiter='\t')
     for row in input:
         if row[0] == "MGI":  # FlyBase = FB
-            gene= row[1]
-            go = row[3]
+            gene = row[1]
+            go = row[4]
             if gene in vi_inviable_genes:
                 if isinstance(vi_inviable_genes[gene], tuple):
                     vi_inviable_genes[gene][1].append(go)
@@ -120,5 +131,9 @@ def get_viability_go_data_mouse(gene_association_file, vi_inviable_genes):
     # Convert tuple values to (string, list of strings)
     for gene, value in vi_inviable_genes.items():
         vi_inviable_genes[gene] = {"status": str(value[0]), "go_list": list(map(str, value[1]))}
+
+    print(f"Species: mouse")
+    print(f"Lethal genes with GO terms: {sum(1 for v in vi_inviable_genes.values() if v['status'] == 'lethal')}")
+    print(f"Viable genes with GO terms: {sum(1 for v in vi_inviable_genes.values() if v['status'] == 'viable')}")
 
     return vi_inviable_genes

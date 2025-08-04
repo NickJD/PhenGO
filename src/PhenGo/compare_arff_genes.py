@@ -25,12 +25,12 @@ def parse_arff(file_path):
 def main():
     parser = argparse.ArgumentParser(
         description='Compare genes and labels in two ARFF files')
-    parser.add_argument('file_a', help='First ARFF file')
-    parser.add_argument('file_b', help='Second ARFF file')
+    parser.add_argument('-arff_a', help='First ARFF file')
+    parser.add_argument('-arff_b', help='Second ARFF file')
     args = parser.parse_args()
 
-    genes_a = parse_arff(args.file_a)
-    genes_b = parse_arff(args.file_b)
+    genes_a = parse_arff(args.arff_a)
+    genes_b = parse_arff(args.arff_b)
 
     set_a = set(genes_a.keys())
     set_b = set(genes_b.keys())
@@ -39,11 +39,11 @@ def main():
     only_in_a = set_a - set_b
     only_in_b = set_b - set_a
 
-    print(f"\nGenes only in {args.file_a}: {len(only_in_a)}")
+    print(f"\nGenes only in {args.arff_a}: {len(only_in_a)}")
     for g in sorted(only_in_a):
         print(f"  {g}")
 
-    print(f"\nGenes only in {args.file_b}: {len(only_in_b)}")
+    print(f"\nGenes only in {args.arff_b}: {len(only_in_b)}")
     for g in sorted(only_in_b):
         print(f"  {g}")
 
@@ -64,7 +64,7 @@ def main():
 
     print(f"\nShared genes with DIFFERENT label: {len(diff_label)}")
     for g, la, lb in diff_label:
-        print(f"  {g}: {os.path.basename(args.file_a)}={la} vs {os.path.basename(args.file_b)}={lb}")
+        print(f"  {g}: {os.path.basename(args.arff_a)}={la} vs {os.path.basename(args.arff_b)}={lb}")
 
 if __name__ == '__main__':
     main()

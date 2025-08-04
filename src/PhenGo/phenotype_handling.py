@@ -76,9 +76,9 @@ def get_viable_inviable_fish(options, phenotype_file):
     # v = ",viable" in line
     # a = ",alive" in line
     for row in input:
-        if "lethal" in row or "dead" in row:
+        if ("lethal" in row[10] and "semi-lethal" not in row[10]) or "dead" in row[10]:
             vi_inviable_genes.setdefault(row[1], []).append("lethal")
-        elif "viable" in row or "alive" in row:
+        elif ("viable" in row[10] and "semi-viable" not in row[10]) or "alive" in row[10]:
             vi_inviable_genes.setdefault(row[1], []).append("viable")
         else:
             vi_inviable_genes.setdefault(row[1].split('[')[0], []).append("other")
@@ -108,7 +108,7 @@ def get_viable_inviable_worm(options, phenotype_file):
     input = csv.reader(input, delimiter='\t')
     for row in input:
         if len(row) > 3:
-            if any(term in row for term in terms) and 'NOT' not in row[3]:
+            if any(term in row[4] for term in terms) and 'NOT' not in row[3]:
                 vi_inviable_genes.setdefault(row[2], []).append("lethal")
             elif 'NOT' not in row[3]:
                 vi_inviable_genes.setdefault(row[2], []).append("viable")
