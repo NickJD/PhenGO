@@ -1,4 +1,3 @@
-
 import argparse
 import os
 
@@ -58,9 +57,9 @@ def main():
         else:
             diff_label.append((g, label_a, label_b))
 
-    print(f"\nShared genes with SAME label: {len(same_label)}")
-    for g, label in same_label:
-        print(f"  {g}: {label}")
+    # print(f"\nShared genes with SAME label: {len(same_label)}")
+    # for g, label in same_label:
+    #     print(f"  {g}: {label}")
 
     print(f"\nShared genes with DIFFERENT label: {len(diff_label)}")
     for g, la, lb in diff_label:

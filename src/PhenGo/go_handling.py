@@ -92,8 +92,8 @@ def get_viability_go_data_worm(gene_association_file, vi_inviable_genes):
     input = gzip.open(gene_association_file, 'rt', encoding='utf-8')
     input = csv.reader(input, delimiter='\t')
     for row in input:
-        if row[0] == "WB":  # FlyBase = FB
-            gene= row[2]
+        if row[0] == "WB":  # WormBase = FB
+            gene = row[2]
             go = row[4]
             if gene in vi_inviable_genes:
                 if isinstance(vi_inviable_genes[gene], tuple):

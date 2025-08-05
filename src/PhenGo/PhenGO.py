@@ -1,12 +1,10 @@
-import csv
 import argparse
 import sys
-import gzip
-from obo_to_graph import obo_to_graph
 import shutil
 import os
 import networkx as nx
 
+from obo_to_graph import obo_to_graph
 from constants import *
 from phenotype_handling import *
 from go_handling import *
@@ -211,12 +209,17 @@ def main():
     optional = parser.add_argument_group('Optional parameters')
     optional.add_argument('-filter_unused_gos', dest='filter_unused_gos', action='store_false', required=False,
                         help='Filter out unused GO terms from the FUNC and ARFF output (default: True)')
+    optional.add_argument('-filter_mixed_terms', dest='filter_mixed_terms', action='store_true', required=False,
+                        help='Filter out genes which have both lethal and viable phenotypes - '
+                             'Terms not specifically lethal/viable are not counted in this (default: False)')
     optional.add_argument('-gene_go_pheno', dest='gene_go_pheno', action='store_true', required=False,
                         help='Output "Gene-GO-Phenotype" (Rbbp5	GO:0003674	0) file for overrepresentation analysis with tools such as FUNC (default: False)')
 
     fly_args = parser.add_argument_group('Fly specific parameters')
     fly_args.add_argument('-fly_assignments', dest='fly_assignments', required=False,
                         help='Provide TSV file of fly assignments (file confirming genes are assignment to drosophila melanogaster (default: "data/fly/FlyBase_Fields_2017.txt.gz")')
+    fly_args.add_argument('-driver_lines', dest='driver_lines', required=False,
+                        help='Provide TSV file of fly driver lines (file containing the name of driver lines (RNAi) to ignore when present with the "with" tag (default: "data/fly/FlyBase_DriverLine_Fields_2025_08_05.txt.gz")')
     fly_args.add_argument('-filt_with', dest='filt_with', action='store_true', required=False,
                         help='Filter out phenotype with "with" tag (default: DO NOT FILTER)')
 
@@ -264,6 +267,13 @@ def main():
                 print(f"Error: Fly assignments file {options.fly_assignments} does not exist.")
                 sys.exit(1)
         print(f"Fly assignments file: {options.fly_assignments}")
+        if options.driver_lines is None:
+            options.driver_lines = DEFAULT_FLY_DRIVER_LINES_FILE
+        else:
+            if not os.path.exists(options.driver_lines):
+                print(f"Error: Fly driver lines file {options.driver_lines} does not exist.")
+                sys.exit(1)
+        print(f"Fly driver lines file: {options.driver_lines}")
     print(f"Output directory: {options.output_dir}")
 
     # Ensure output directory exists and is empty
@@ -311,10 +321,11 @@ def main():
     if options.filter_unused_gos == True:
         vi_inviable_genes, go_terms = removed_unused_gos(vi_inviable_genes, unique_go_terms)
 
+    # Write the filtered GO terms to a file - SLOW
     if options.gene_go_pheno == True:
-        get_FUNC_output(vi_inviable_genes, Func, f"{options.output_dir}/filtered_FUNC.tab")
+        get_FUNC_output(vi_inviable_genes, Func, f"{options.output_dir}/{options.species}_FUNC.tab")
 
-    write_arff_output(vi_inviable_genes, go_terms, f"{options.output_dir}/filtered_GO.arff")
+    write_arff_output(vi_inviable_genes, go_terms, f"{options.output_dir}/{options.species}_Pheno_GO.arff")
 
 
 

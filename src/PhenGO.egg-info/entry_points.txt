@@ -1,0 +1,3 @@
+[console_scripts]
+PhenGO = PhenoGO.PhenoGO:main
+phengo = PhenoGO.PhenoGO:main
