@@ -2,7 +2,11 @@ import argparse
 import csv
 from collections import defaultdict
 
-from constants import *
+try: # While calling this script through pip
+    from .constants import *
+except (ModuleNotFoundError, ImportError, NameError, TypeError) as error:
+    from constants import *
+
 
 
 def parse_arff_with_terms(file_path):

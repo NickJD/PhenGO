@@ -1,5 +1,0 @@
-[console_scripts]
-PhenGO = PhenGO.PhenGO:main
-compare-arff = PhenGO.compare_arff_genes:main
-compare_arff = PhenGO.compare_arff_genes:main
-phengo = PhenoO.PhenGO:main

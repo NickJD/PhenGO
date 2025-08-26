@@ -34,16 +34,22 @@ def get_viability_go_data_fly(options, gene_association_file, vi_inviable_genes)
         if row[0] == "FB":  # FlyBase = FB
             gene= row[2].partition('|')[0]
             go = row[4]
-            #dataMarker = row[6] # Current we are not recording the data marker, but it can be used if needed
-            if gene in vi_inviable_genes:
-                if isinstance(vi_inviable_genes[gene], tuple):
-                    vi_inviable_genes[gene][1].append(go)
-                else:
-                    # Convert string value to tuple: (original string, [go])
-                    vi_inviable_genes[gene] = (vi_inviable_genes[gene], [go])
+            if 'NOT' not in row[3]:
+                #dataMarker = row[6] # Current we are not recording the data marker, but it can be used if needed
+                if gene in vi_inviable_genes:
+                    if isinstance(vi_inviable_genes[gene], tuple):
+                        vi_inviable_genes[gene][1].append(go)
+                    else:
+                        # Convert string value to tuple: (original string, [go])
+                        vi_inviable_genes[gene] = (vi_inviable_genes[gene], [go])
+            # else:
+            #     print()
+            #     print(gene)
     # Filter genes to only those with a GO list (tuple value)
-    vi_inviable_genes = {gene: value for gene, value in vi_inviable_genes.items() if isinstance(value, tuple)}
+    #vi_inviable_genes = {gene: value for gene, value in vi_inviable_genes.items() if isinstance(value, tuple)}
     # Convert tuple values to (string, list of strings)
+    removed_genes = [gene for gene, value in vi_inviable_genes.items() if not isinstance(value, tuple)]
+    vi_inviable_genes_new = {gene: value for gene, value in vi_inviable_genes.items() if isinstance(value, tuple)}
     for gene, value in vi_inviable_genes.items():
         vi_inviable_genes[gene] = {"status": str(value[0]), "go_list": list(map(str, value[1]))}
 
@@ -53,7 +59,7 @@ def get_viability_go_data_fly(options, gene_association_file, vi_inviable_genes)
         next(f)  # Skip header
         valid_genes = set()
         for row in csv.reader(f, delimiter='\t'):
-            if len(row) > 4 and row[0] in vi_inviable_genes and row[3] != 'Withdrawn' and row[4] == 'melanogaster':
+            if len(row) > 3 and row[0] in vi_inviable_genes and row[1] == 'melanogaster' and row[2] != 'Withdrawn':
                 valid_genes.add(row[0])
     vi_inviable_genes = {gene: value for gene, value in vi_inviable_genes.items() if gene in valid_genes}
 

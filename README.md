@@ -46,7 +46,7 @@ usage: PhenGO.py [-h] -species SPECIES -phenotype_file PHENOTYPE_FILE
                  [-worm_phenotypes WORM_PHENOTYPES]
                  [-mouse_phenotypes MOUSE_PHENOTYPES] [-v]
 
-PhenGO v0.1.1 - Convert phenotype and GO data to ARFF format
+PhenGO v0.1.2 - Convert phenotype and GO data to ARFF format
 
 Required Options:
   -species SPECIES      Species tag (e.g., fly, yeast)
@@ -100,7 +100,7 @@ Misc:
 ```commandline
 usage: compare_arff_genes.py [-h] -arff_a ARFF_A -arff_b ARFF_B -o OUTPUT
 
-PhenoGO v0.1.1 - Compare-ARFF: Compare two ARFF files.
+PhenoGO v0.1.2 - Compare-ARFF: Compare two ARFF files.
 
 options:
   -h, --help      show this help message and exit

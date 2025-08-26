@@ -4,7 +4,7 @@ import gzip
 import networkx as nx
 import json
 
-#from biom.assets.exercise_api import obs_without_top
+
 
 
 def define_graph_from_file(EdgesInput):

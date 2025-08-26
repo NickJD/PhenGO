@@ -4,10 +4,17 @@ import shutil
 import os
 import networkx as nx
 
-from obo_to_graph import obo_to_graph
-from constants import *
-from phenotype_handling import *
-from go_handling import *
+try: # Try to import from the package if available
+    from .obo_to_graph import obo_to_graph
+    from .constants import *
+    from .phenotype_handling import *
+    from .go_handling import *
+except (ModuleNotFoundError, ImportError, NameError, TypeError) as error:
+    from obo_to_graph import obo_to_graph
+    from constants import *
+    from phenotype_handling import *
+    #from alt_fly_phenotyping import *
+    from go_handling import *
 
 
 
@@ -198,6 +205,34 @@ def write_arff_output(vi_inviable_genes, filtered_go_terms, output_file):
 
 def main():
     parser = argparse.ArgumentParser(description=f"PhenGO {PhenGO_VERSION} - Convert phenotype and GO data to ARFF format")
+    parser.add_argument("--print-defaults", action="store_true",
+                        help="Print default files and methods used for each species and exit.")
+
+    # Parse known args first to check for --print-defaults
+    args, remaining_argv = parser.parse_known_args()
+    if args.print_defaults:
+        print("\nDefault options and methods for each species:\n")
+        print("Fly:")
+        print(f"  Assignments file: {DEFAULT_FLY_SPECIES_FIELDS_FILE}")
+        print(f"  Lethal genes file: {DEFAULT_FLY_LETHAL_GENES_FILE}")
+        #print(f"  Driver lines file: {DEFAULT_FLY_HELPER_LINES_FILE}")
+        print("  Method: get_viable_inviable_fly, get_viability_go_data_fly")
+        print("Worm:")
+        print(f"  Lethal phenotypes file: {DEFAULT_WORM_LETHAL_PHENOTYPES_FILE}")
+        print(f"  Lethal genes file: {DEFAULT_WORM_LETHAL_GENES_FILE}")
+        print("  Method: By default we do not use the lethal genes file, we use the default lethal phenotypes file"
+              " to identify the genes in the user-provided phenotype_data file to identify lethal genes. If lethal "
+              "genes file is provided (or 'default' is given, it will be used to identify lethal genes instead.")
+        print("Mouse:")
+        print(f"  Phenotypes file: {DEFAULT_MOUSE_PHENOTYPES_FILE}")
+        print("  Method: get_viable_inviable_mouse, get_viability_go_data_mouse")
+        print("Yeast:")
+        print("  Method: get_viable_inviable_yeast, get_viability_go_data_yeast")
+        print("Fish:")
+        print("  Method: get_viable_inviable_fish, get_viability_go_data_fish")
+        sys.exit(0)
+
+
     parser._action_groups.pop()
     required = parser.add_argument_group('Required Options')
     required.add_argument('-species', dest="species", required=True, help='Species tag (e.g., fly, yeast)')
@@ -216,16 +251,20 @@ def main():
                         help='Output "Gene-GO-Phenotype" (Rbbp5	GO:0003674	0) file for overrepresentation analysis with tools such as FUNC (default: False)')
 
     fly_args = parser.add_argument_group('Fly specific parameters')
+    fly_args.add_argument('-fly_lethal_genes', dest='fly_lethal_genes', required=False,
+                        help='Provide TSV file of specified lethal fly genes (provide "default" for default lethal genes: "data/fly/FlyBase_Lethal_Gene_IDs_2025-08-15.txt.gz")')
     fly_args.add_argument('-fly_assignments', dest='fly_assignments', required=False,
                         help='Provide TSV file of fly assignments (file confirming genes are assignment to drosophila melanogaster (default: "data/fly/FlyBase_Fields_2017.txt.gz")')
-    fly_args.add_argument('-driver_lines', dest='driver_lines', required=False,
-                        help='Provide TSV file of fly driver lines (file containing the name of driver lines (RNAi) to ignore when present with the "with" tag (default: "data/fly/FlyBase_DriverLine_Fields_2025_08_05.txt.gz")')
-    fly_args.add_argument('-filt_with', dest='filt_with', action='store_true', required=False,
+    # fly_args.add_argument('-fly_helper_lines', dest='fly_helper_lines', required=False,
+    #                     help='Provide TSV file of fly driver lines (file containing the name of driver lines (RNAi) to ignore when present with the "with" tag (default: "data/fly/FlyBase_DriverLine_Fields_2025_08_05.txt.gz")')
+    fly_args.add_argument('-filter_multigenes', dest='filter_multigenes', action='store_true', required=False,
                         help='Filter out phenotype with "with" tag (default: DO NOT FILTER)')
 
     worm_args = parser.add_argument_group('Worm specific parameters')
     worm_args.add_argument('-worm_phenotypes', dest='worm_phenotypes', required=False,
-                        help='Provide TSV file of worm phenotypes (default: "data/worm/WS297_lethal_terms.tsv.gz")')
+                        help='Provide TSV file of worm phenotypes (default: "data/worm/lethal_terms_traversed_2025-08-12.tsv.gz")')
+    worm_args.add_argument('-worm_lethal_genes', dest='worm_lethal_genes', required=False,
+                        help='Provide TSV file of specified lethal worm genes (provide "default" for default lethal genes: "data/worm/genes_direct_and_inferred_for_WBPhenotype_0000062_11-08-2025.txt.gz")')
 
     mouse_args = parser.add_argument_group('Mouse specific parameters')
     mouse_args.add_argument('-mouse_phenotypes', dest='mouse_phenotypes', required=False,
@@ -235,22 +274,80 @@ def main():
     misc.add_argument("-v", "--version", action="version",
                  version=f"PyamilySeq {PhenGO_VERSION}: Exiting.")
 
+
     options = parser.parse_args()
-
-
 
     print(f"Processing phenotype data for species: {options.species}")
     print(f"Phenotype file: {options.phenotype_file}")
     print(f"Gene association file: {options.gene_association_file}")
     print(f"GO OBO file: {options.go_obo_file}")
-    if options.species.lower() == "worm":
+
+### FLY
+    if options.species.lower() == "fly":
+        ## By default we do not use the fly lethal genes file
+        if options.fly_lethal_genes == None:
+            pass
+        elif options.fly_lethal_genes.lower() == "default":
+            print(f"Using default fly lethal genes file: : {DEFAULT_FLY_LETHAL_GENES_FILE}")
+            options.fly_lethal_genes = DEFAULT_FLY_LETHAL_GENES_FILE
+        else:
+            if not os.path.exists(options.fly_lethal_genes):
+                print(f"Error: Fly lethal genes file {options.fly_lethal_genes} does not exist.")
+                sys.exit(1)
+            else:
+                print(f"Fly lethal genes file: {options.fly_lethal_genes}")
+        ## If the user does not provide a FlyBase helper lines file, we use the default
+        # if options.fly_helper_lines is None:
+        #     options.fly_helper_lines = DEFAULT_FLY_HELPER_LINES_FILE
+        # else:
+        #     if not os.path.exists(options.fly_helper_lines):
+        #         print(f"Error: Fly helper lines file {options.fly_helper_lines} does not exist.")
+        #         sys.exit(1)
+        # print(f"Fly helper lines file: {options.fly_helper_lines}")
+        ## If the user does not provide a fly species assignments file, we use the default
+        if options.fly_assignments is None:
+            options.fly_assignments = DEFAULT_FLY_SPECIES_FIELDS_FILE
+        else:
+            if not os.path.exists(options.fly_assignments):
+                print(f"Error: Fly assignments file {options.fly_assignments} does not exist.")
+                sys.exit(1)
+        print(f"Fly assignments file: {options.fly_assignments}")
+
+
+        # if options.driver_lines is None:
+        #     options.driver_lines = DEFAULT_FLY_DRIVER_LINES_FILE
+        # else:
+        #     if not os.path.exists(options.driver_lines):
+        #         print(f"Error: Fly driver lines file {options.driver_lines} does not exist.")
+        #         sys.exit(1)
+        # print(f"Fly driver lines file: {options.driver_lines}")
+
+### WORM
+    elif options.species.lower() == "worm":
+        ## By default we do not use the worm lethal genes file
+        if options.worm_lethal_genes == None:
+            pass
+        elif options.worm_lethal_genes.lower() == "default":
+            print(f"Using default worm lethal genes file: : {DEFAULT_WORM_LETHAL_GENES_FILE}")
+            options.worm_lethal_genes = DEFAULT_WORM_LETHAL_GENES_FILE
+        else:
+            if not os.path.exists(options.worm_lethal_genes):
+                print(f"Error: Worm lethal genes file {options.worm_lethal_genes} does not exist.")
+                sys.exit(1)
+            else:
+                print(f"Worm lethal genes file: {options.worm_lethal_genes}")
+        ## If the user does not provide a worm phenotypes file, we use the default
         if options.worm_phenotypes is None:
-            options.worm_phenotypes = DEFAULT_WORM_PHENOTYPES_FILE
+            options.worm_phenotypes = DEFAULT_WORM_LETHAL_PHENOTYPES_FILE
+            print(f"Using default Worm phenotypes file: {options.worm_phenotypes}")
         else:
             if not os.path.exists(options.worm_phenotypes):
                 print(f"Error: Worm phenotypes file {options.worm_phenotypes} does not exist.")
                 sys.exit(1)
-        print(f"Worm phenotypes file: {options.worm_phenotypes}")
+            else:
+                print(f"Worm phenotypes file: {options.worm_phenotypes}")
+
+### MOUSE
     elif options.species.lower() == "mouse":
         if options.mouse_phenotypes is None:
             options.mouse_phenotypes = DEFAULT_MOUSE_PHENOTYPES_FILE
@@ -259,21 +356,8 @@ def main():
                 print(f"Error: Mouse phenotypes file {options.mouse_phenotypes} does not exist.")
                 sys.exit(1)
         print(f"Mouse phenotypes file: {options.mouse_phenotypes}")
-    elif options.species.lower() == "fly":
-        if options.fly_assignments is None:
-            options.fly_assignments = DEFAULT_FLY_FIELDS_FILE
-        else:
-            if not os.path.exists(options.fly_assignments):
-                print(f"Error: Fly assignments file {options.fly_assignments} does not exist.")
-                sys.exit(1)
-        print(f"Fly assignments file: {options.fly_assignments}")
-        if options.driver_lines is None:
-            options.driver_lines = DEFAULT_FLY_DRIVER_LINES_FILE
-        else:
-            if not os.path.exists(options.driver_lines):
-                print(f"Error: Fly driver lines file {options.driver_lines} does not exist.")
-                sys.exit(1)
-        print(f"Fly driver lines file: {options.driver_lines}")
+
+###
     print(f"Output directory: {options.output_dir}")
 
     # Ensure output directory exists and is empty
@@ -325,7 +409,7 @@ def main():
     if options.gene_go_pheno == True:
         get_FUNC_output(vi_inviable_genes, Func, f"{options.output_dir}/{options.species}_FUNC.tab")
 
-    write_arff_output(vi_inviable_genes, go_terms, f"{options.output_dir}/{options.species}_Pheno_GO.arff")
+    write_arff_output(vi_inviable_genes, go_terms, f"{options.output_dir}/{options.species}_PhenGO.arff")
 
 
 
