@@ -19,13 +19,15 @@ except (ModuleNotFoundError, ImportError, NameError, TypeError) as error:
 
 
 def removed_unused_gos(vi_inviable_genes, unique_go_terms):
-    # collect *all* GOs actually used in your genes
+    # This optional function removes unused GO terms from the ARFF and FUNC outputs
+    # It rebuilds the GO term list and each gene’s bin_vec to only include used terms
+    # collect *all* GOs assigned to at least 1 gene
     used_gos = set()
     for gene_vals in vi_inviable_genes.values():
         used_gos.update(gene_vals.get("go_list", []))
     # restrict the master list to only the used terms, in order
     filtered_go_terms = [go for go in unique_go_terms if go in used_gos]
-    # now rebuild each gene’s go_list AND its binVec *only* over filtered_go_terms
+    # now rebuild each gene’s go_list AND its bin_vec *only* over filtered_go_terms
     filtered_genes = {}
     for gene_id, gene_vals in vi_inviable_genes.items():
         old_go_list = gene_vals.get("go_list", [])
@@ -34,15 +36,16 @@ def removed_unused_gos(vi_inviable_genes, unique_go_terms):
         seen = set()
         old_go_list = [go for go in old_go_list if not (go in seen or seen.add(go))]
         new_go_list = [go for go in filtered_go_terms if go in old_go_list]
-        new_binvec = [1 if go in new_go_list else 0 for go in filtered_go_terms]
+        new_bin_vec = [1 if go in new_go_list else 0 for go in filtered_go_terms]
         filtered_genes[gene_id] = {
             "status" : gene_vals["status"],
             "go_list": new_go_list,
-            "binVec" : new_binvec
+            "bin_vec" : new_bin_vec
         }
     return filtered_genes, filtered_go_terms
 
 def Incidents(options, Up, Seen, gr, obsolete_go_terms):
+    # Check if any node in Up has no parents
     i = 0
     for key in Up:
         if key not in Seen:
@@ -69,6 +72,7 @@ def Incidents(options, Up, Seen, gr, obsolete_go_terms):
                     return True
 
 def Duplicates(Up):
+    # Remove duplicates from Up
     NewUp = []
     NodesSeen = []
     for node in Up:
@@ -78,22 +82,23 @@ def Duplicates(Up):
     return NewUp
 
 def assign_go_to_vector(options, vi_inviable_genes, gr, unique_go_terms, obsolete_go_terms):
-    binVec = [0] * len(unique_go_terms)
-    Missing = []
+    # Assign GO terms to binary vectors for each gene
+    bin_vec = [0] * len(unique_go_terms)
+    missing = []
     debug = 0
-    Func = []
+    o_rep = []
     for gene, values in vi_inviable_genes.items():
         debug = debug + 1
-        goCount = 0
+        go_count = 0
         Ancestors = []
         Seen = []
         Up = []
         for t in range(1, len(values['go_list'])):
-            goCount = goCount + 1
-            if "GO" in values['go_list'][goCount]:
-                temp = values['go_list'][goCount]
+            go_count = go_count + 1
+            if "GO" in values['go_list'][go_count]:
+                temp = values['go_list'][go_count]
                 temp = temp
-                Func.append(gene + "\t" + temp + "\n")
+                o_rep.append(gene + "\t" + temp + "\n")
                 Up.append(temp)
                 Continue = True
                 Nodes = []
@@ -122,19 +127,19 @@ def assign_go_to_vector(options, vi_inviable_genes, gr, unique_go_terms, obsolet
         del Ancestors[:]
         for Node in ModifiedAncestors:
             try:
-                binVec[unique_go_terms.index(Node)] = 1
+                bin_vec[unique_go_terms.index(Node)] = 1
             except (KeyError, ValueError):
                 print(f"Missing node: {Node} ")
                 try:
-                    Missing.index(Node)
+                    missing.index(Node)
                     print(f"Node {Node} already marked as missing")
                 except (KeyError, ValueError):
-                    Missing.append(Node)
+                    missing.append(Node)
         for x in ModifiedAncestors:
-            Func.append(gene + "\t" + x + "\n")
-        vi_inviable_genes[gene]["binVec"] = binVec.copy()
-        Func.append('\n')
-        binVec = [0] * len(unique_go_terms)
+            o_rep.append(gene + "\t" + x + "\n")
+        vi_inviable_genes[gene]["bin_vec"] = bin_vec.copy()
+        o_rep.append('\n')
+        bin_vec = [0] * len(unique_go_terms)
         try:
             del Seen[:]
             del Up[:]
@@ -144,11 +149,12 @@ def assign_go_to_vector(options, vi_inviable_genes, gr, unique_go_terms, obsolet
         except NameError:
             continue
 
-    return vi_inviable_genes, unique_go_terms, Func
+    return vi_inviable_genes, unique_go_terms, o_rep
 
 
-def get_FUNC_output(vi_inviable_genes, Func, output_file):
-    newFUNC = []
+def get_o_rep_output(vi_inviable_genes, o_rep, output_file):
+    # Generate FUNC/Overrepresentation output file
+    new_o_rep = []
     geneSeen = []
     FUNCoutputfile = open(output_file, mode='w')
     tempySeen = []
@@ -158,18 +164,18 @@ def get_FUNC_output(vi_inviable_genes, Func, output_file):
         if values['status'] in ['inviable','lethal']:  # Accept both 'inviable' and 'lethal' for other species for line in Func:
                 if line == "\n":
                     continue
-                tempFUNC = []
+                tmp_o_rep = []
                 if gene in line and line not in geneSeen:
                     geneSeen.append(line)
                     line = line.strip()
-                    tempFUNC.append(str(line) + "\t1")
-                    newFUNC.append(tempFUNC)
+                    tmp_o_rep.append(str(line) + "\t1")
+                    new_o_rep.append(tmp_o_rep)
                 if gene in line and gene not in tempySeen:
                     tempySeen.append(gene)
                     Counter = Counter + 1
 
         if values['status'] == 'viable':
-            for line in Func:
+            for line in o_rep:
                 if line == "\n":
                     continue
                 tempFUNC = []
@@ -177,16 +183,13 @@ def get_FUNC_output(vi_inviable_genes, Func, output_file):
                     geneSeen.append(line)
                     line = line.strip()
                     tempFUNC.append(str(line) + "\t0")
-                    newFUNC.append(tempFUNC)
+                    new_o_rep.append(tmp_o_rep)
                 if gene in line and gene not in tempySeen:
                     tempySeen.append(gene)
                     Counter = Counter + 1
 
-    for element in newFUNC:
+    for element in new_o_rep:
         FUNCoutputfile.write(" ".join(element) + "\n")
-
-
-
 
 
 def write_arff_output(vi_inviable_genes, filtered_go_terms, output_file):
@@ -199,7 +202,7 @@ def write_arff_output(vi_inviable_genes, filtered_go_terms, output_file):
         f.write("@DATA\n")
         for gene, values in vi_inviable_genes.items():
             gene = gene.replace("'", "-")  # Replace single quotes with underscores
-            bin_vec = ",".join(map(str, values["binVec"]))
+            bin_vec = ",".join(map(str, values["bin_vec"]))
             status = values["status"]
             f.write(f"{gene},{bin_vec},{status}\n")
 
@@ -407,7 +410,7 @@ def main():
 
     # Write the filtered GO terms to a file - SLOW
     if options.gene_go_pheno == True:
-        get_FUNC_output(vi_inviable_genes, Func, f"{options.output_dir}/{options.species}_FUNC.tab")
+        get_o_rep_output(vi_inviable_genes, Func, f"{options.output_dir}/{options.species}_OverRepresentation.tab")
 
     write_arff_output(vi_inviable_genes, go_terms, f"{options.output_dir}/{options.species}_PhenGO.arff")
 

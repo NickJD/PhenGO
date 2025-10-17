@@ -2,7 +2,7 @@ import argparse
 import csv
 from collections import defaultdict
 
-try: # While calling this script through pip
+try: # While calling this script through pipa
     from .constants import *
 except (ModuleNotFoundError, ImportError, NameError, TypeError) as error:
     from constants import *

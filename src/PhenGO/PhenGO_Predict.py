@@ -1,12 +1,25 @@
+import shutil
+import os
 import argparse
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
-from tensorflow import keras
-from tensorflow.keras import layers
 import matplotlib.pyplot as plt
+
+# TensorFlow imports with error handling
+try:
+    import tensorflow as tf
+    from tensorflow import keras
+    from tensorflow.keras import layers
+    from tensorflow.keras.metrics import Precision, Recall
+
+    print(f"TensorFlow version: {tf.__version__}")
+except ImportError as e:
+    print(f"Error importing TensorFlow: {e}")
+    print("Please install TensorFlow: pip install tensorflow")
+    exit(1)
 
 
 def load_arff_data(filepath):
@@ -18,57 +31,70 @@ def load_arff_data(filepath):
     attribute_types = []
     in_data_section = False
 
-    with open(filepath, 'r', encoding='utf-8') as f:
-        for line in f:
-            line = line.strip()
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
 
-            # Skip empty lines and comments
-            if not line or line.startswith('%'):
-                continue
+                # Skip empty lines and comments
+                if not line or line.startswith('%'):
+                    continue
 
-            # Check for relation
-            if line.lower().startswith('@relation'):
-                continue
+                # Check for relation
+                if line.lower().startswith('@relation'):
+                    continue
 
-            # Check for attributes
-            if line.lower().startswith('@attribute'):
-                parts = line.split()
-                attr_name = parts[1].strip('"\'')  # Remove quotes if present
-                attr_type = ' '.join(parts[2:]).strip()
-                attribute_names.append(attr_name)
-                attribute_types.append(attr_type)
-                continue
+                # Check for attributes
+                if line.lower().startswith('@attribute'):
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        attr_name = parts[1].strip('"\'')  # Remove quotes if present
+                        attr_type = ' '.join(parts[2:]).strip()
+                        attribute_names.append(attr_name)
+                        attribute_types.append(attr_type)
+                    continue
 
-            # Check for data section
-            if line.lower().startswith('@data'):
-                in_data_section = True
-                continue
+                # Check for data section
+                if line.lower().startswith('@data'):
+                    in_data_section = True
+                    continue
 
-            # Process data lines
-            if in_data_section:
-                # Split by comma, handling quoted strings
-                values = []
-                current_value = ""
-                in_quotes = False
+                # Process data lines
+                if in_data_section:
+                    # Split by comma, handling quoted strings
+                    values = []
+                    current_value = ""
+                    in_quotes = False
 
-                for char in line:
-                    if char == '"' and not in_quotes:
-                        in_quotes = True
-                    elif char == '"' and in_quotes:
-                        in_quotes = False
-                    elif char == ',' and not in_quotes:
-                        values.append(current_value.strip().strip('"\''))
-                        current_value = ""
+                    for char in line:
+                        if char == '"' and not in_quotes:
+                            in_quotes = True
+                        elif char == '"' and in_quotes:
+                            in_quotes = False
+                        elif char == ',' and not in_quotes:
+                            values.append(current_value.strip().strip('"\''))
+                            current_value = ""
+                        else:
+                            current_value += char
+
+                    # Add the last value
+                    values.append(current_value.strip().strip('"\''))
+
+                    if len(values) == len(attribute_names):
+                        data_lines.append(values)
                     else:
-                        current_value += char
+                        print(f"Warning: Line has {len(values)} values but expected {len(attribute_names)}")
 
-                # Add the last value
-                values.append(current_value.strip().strip('"\''))
+    except FileNotFoundError:
+        print(f"Error: File {filepath} not found")
+        return None, None
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        return None, None
 
-                if len(values) == len(attribute_names):
-                    data_lines.append(values)
-                else:
-                    print(f"Warning: Line has {len(values)} values but expected {len(attribute_names)}")
+    if not data_lines:
+        print("Error: No data found in ARFF file")
+        return None, None
 
     # Create DataFrame
     df = pd.DataFrame(data_lines, columns=attribute_names)
@@ -150,13 +176,13 @@ def create_model(input_dim, hidden_units=[128, 64], dropout_rate=0.3):
     model.compile(
         optimizer='adam',
         loss='binary_crossentropy',
-        metrics=['accuracy', 'precision', 'recall']
+        metrics=['accuracy', Precision(name='precision'), Recall(name='recall')]
     )
 
     return model
 
 
-def plot_training_history(history):
+def plot_training_history(options, history):
     """Plot training history"""
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
 
@@ -177,208 +203,271 @@ def plot_training_history(history):
     axes[0, 1].legend()
 
     # Precision
-    axes[1, 0].plot(history.history['precision'], label='Training')
-    axes[1, 0].plot(history.history['val_precision'], label='Validation')
-    axes[1, 0].set_title('Model Precision')
-    axes[1, 0].set_xlabel('Epoch')
-    axes[1, 0].set_ylabel('Precision')
-    axes[1, 0].legend()
+    if 'precision' in history.history:
+        axes[1, 0].plot(history.history['precision'], label='Training')
+        axes[1, 0].plot(history.history['val_precision'], label='Validation')
+        axes[1, 0].set_title('Model Precision')
+        axes[1, 0].set_xlabel('Epoch')
+        axes[1, 0].set_ylabel('Precision')
+        axes[1, 0].legend()
 
     # Recall
-    axes[1, 1].plot(history.history['recall'], label='Training')
-    axes[1, 1].plot(history.history['val_recall'], label='Validation')
-    axes[1, 1].set_title('Model Recall')
-    axes[1, 1].set_xlabel('Epoch')
-    axes[1, 1].set_ylabel('Recall')
-    axes[1, 1].legend()
+    if 'recall' in history.history:
+        axes[1, 1].plot(history.history['recall'], label='Training')
+        axes[1, 1].plot(history.history['val_recall'], label='Validation')
+        axes[1, 1].set_title('Model Recall')
+        axes[1, 1].set_xlabel('Epoch')
+        axes[1, 1].set_ylabel('Recall')
+        axes[1, 1].legend()
 
     plt.tight_layout()
-    plt.savefig('training_history.png', dpi=300, bbox_inches='tight')
-    plt.show()
+    plt.savefig(os.path.join(options.output_dir,'training_history.png'), dpi=300, bbox_inches='tight')
+    print("Training history plot saved as 'training_history.png'")
+    plt.close()  # Close to free memory
 
+def analyse_feature_importance(options, model, feature_names, X_test, y_test, n_repeats, top_n=20):
+    """Permutation-based feature importance with class-specific breakdown"""
 
-def analyse_feature_importance(model, feature_names, X_test, y_test, top_n=20):
-    """Analyse which GO terms are most important for predicting lethal vs viable"""
-    print(f"\nAnalysing feature importance (top {top_n} GO terms for each class)...")
+    print(f"\nAnalysing feature importance with {n_repeats} repeats...")
 
-    # Method 1: Simple weight-based analysis from first layer
-    weights = model.get_layer('hidden1').get_weights()[0]  # Shape: (n_features, n_neurons)
-
-    # Calculate simple importance as mean absolute weight across all first layer neurons
-    feature_contributions = np.mean(np.abs(weights), axis=1)
-
-    # Method 2: Permutation-based importance for class-specific analysis
+    # Baseline predictions
     baseline_preds = model.predict(X_test, verbose=0).flatten()
     baseline_acc = np.mean((baseline_preds > 0.5) == y_test)
 
-    lethal_importance = []
-    viable_importance = []
-    overall_importance = []
+    # Class-specific baselines
+    lethal_mask = y_test == 1
+    viable_mask = y_test == 0
 
-    print("Computing permutation importance for each GO term...")
+    if np.sum(lethal_mask) > 0:
+        lethal_baseline = np.mean((baseline_preds[lethal_mask] > 0.5) == y_test[lethal_mask])
+    else:
+        lethal_baseline = np.nan
+
+    if np.sum(viable_mask) > 0:
+        viable_baseline = np.mean((baseline_preds[viable_mask] > 0.5) == y_test[viable_mask])
+    else:
+        viable_baseline = np.nan
+
+    # Storage
+    overall_mean, overall_std = [], []
+    lethal_mean, lethal_std = [], []
+    viable_mean, viable_std = [], []
+
+    print("Computing permutation importance for each GO terme...")
 
     for i in range(X_test.shape[1]):
-        # Create copy of test data
-        X_permuted = X_test.copy()
+        drops_overall, drops_lethal, drops_viable = [], [], []
 
-        # Permute feature i
-        np.random.shuffle(X_permuted[:, i])
+        for _ in range(n_repeats):
+            print(f"  Permuting GO term {i+1}/{X_test.shape[1]}, repeat {_+1}/{n_repeats}", end='\r')
+            X_permuted = X_test.copy()
+            np.random.shuffle(X_permuted[:, i])
 
-        # Get predictions with permuted feature
-        permuted_preds = model.predict(X_permuted, verbose=0).flatten()
-        permuted_acc = np.mean((permuted_preds > 0.5) == y_test)
+            permuted_preds = model.predict(X_permuted, verbose=0).flatten()
+            perm_acc = np.mean((permuted_preds > 0.5) == y_test)
 
-        # Overall importance
-        importance = baseline_acc - permuted_acc
-        overall_importance.append(importance)
+            drops_overall.append(baseline_acc - perm_acc)
 
-        # Class-specific importance
-        # For lethal class (assuming 1 = lethal)
-        lethal_mask = y_test == 1
-        if np.sum(lethal_mask) > 0:
-            lethal_baseline_acc = np.mean((baseline_preds[lethal_mask] > 0.5) == y_test[lethal_mask])
-            lethal_permuted_acc = np.mean((permuted_preds[lethal_mask] > 0.5) == y_test[lethal_mask])
-            lethal_importance.append(lethal_baseline_acc - lethal_permuted_acc)
-        else:
-            lethal_importance.append(0)
+            if np.sum(lethal_mask) > 0:
+                perm_lethal = np.mean((permuted_preds[lethal_mask] > 0.5) == y_test[lethal_mask])
+                drops_lethal.append(lethal_baseline - perm_lethal)
 
-        # For viable class (assuming 0 = viable)
-        viable_mask = y_test == 0
-        if np.sum(viable_mask) > 0:
-            viable_baseline_acc = np.mean((baseline_preds[viable_mask] > 0.5) == y_test[viable_mask])
-            viable_permuted_acc = np.mean((permuted_preds[viable_mask] > 0.5) == y_test[viable_mask])
-            viable_importance.append(viable_baseline_acc - viable_permuted_acc)
-        else:
-            viable_importance.append(0)
+            if np.sum(viable_mask) > 0:
+                perm_viable = np.mean((permuted_preds[viable_mask] > 0.5) == y_test[viable_mask])
+                drops_viable.append(viable_baseline - perm_viable)
 
-    # Create comprehensive importance DataFrame
+        # Store means and stds
+        overall_mean.append(np.mean(drops_overall))
+        overall_std.append(np.std(drops_overall))
+        lethal_mean.append(np.mean(drops_lethal) if drops_lethal else np.nan)
+        lethal_std.append(np.std(drops_lethal) if drops_lethal else np.nan)
+        viable_mean.append(np.mean(drops_viable) if drops_viable else np.nan)
+        viable_std.append(np.std(drops_viable) if drops_viable else np.nan)
+
+    # Weight heuristic (optional)
+    try:
+        weights = model.get_layer('hidden1').get_weights()[0]
+        weight_contrib = np.mean(np.abs(weights), axis=1)
+    except Exception:
+        weight_contrib = np.zeros(X_test.shape[1])
+
+    # Build DataFrame
     importance_df = pd.DataFrame({
-        'GO_Term_Index': range(len(overall_importance)),
-        'Overall_Importance': overall_importance,
-        'Lethal_Importance': lethal_importance,
-        'Viable_Importance': viable_importance,
-        'Weight_Contribution': feature_contributions
+        'GO_Term_Index': range(len(overall_mean)),
+        'GO_Term': list(feature_names) if feature_names is not None else [f"GO_Term_{i}" for i in range(len(overall_mean))],
+        'Overall_Importance': overall_mean,
+        'Overall_Std': overall_std,
+        'Lethal_Importance': lethal_mean,
+        'Lethal_Std': lethal_std,
+        'Viable_Importance': viable_mean,
+        'Viable_Std': viable_std,
+        'Weight_Contribution': weight_contrib
     })
 
-    if feature_names is not None and len(feature_names) == len(overall_importance):
-        importance_df['GO_Term'] = feature_names
-
-    # Sort by different criteria
+    # Sort copies
     overall_df = importance_df.sort_values('Overall_Importance', ascending=False)
     lethal_df = importance_df.sort_values('Lethal_Importance', ascending=False)
     viable_df = importance_df.sort_values('Viable_Importance', ascending=False)
 
-    print(f"\n=== TOP {top_n} GO TERMS FOR OVERALL PREDICTION ===")
-    print(overall_df[['GO_Term', 'Overall_Importance', 'Lethal_Importance', 'Viable_Importance']].head(top_n))
+    # Save outputs
+    overall_df.to_csv(os.path.join(options.output_dir,'overall_feature_importance.csv'), index=False)
+    lethal_df.to_csv(os.path.join(options.output_dir,'lethal_feature_importance.csv'), index=False)
+    viable_df.to_csv(os.path.join(options.output_dir,'viable_feature_importance.csv'), index=False)
 
-    print(f"\n=== TOP {top_n} GO TERMS FOR PREDICTING LETHAL PHENOTYPE ===")
-    print(lethal_df[['GO_Term', 'Lethal_Importance', 'Overall_Importance']].head(top_n))
-
-    print(f"\n=== TOP {top_n} GO TERMS FOR PREDICTING VIABLE PHENOTYPE ===")
-    print(viable_df[['GO_Term', 'Viable_Importance', 'Overall_Importance']].head(top_n))
-
-    # Create comprehensive visualisation
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-
-    # Overall importance
-    top_overall = overall_df.head(top_n)
-    axes[0, 0].barh(range(top_n), top_overall['Overall_Importance'].values)
-    axes[0, 0].set_xlabel('Permutation Importance')
-    axes[0, 0].set_title(f'Top {top_n} GO Terms - Overall Importance')
-    axes[0, 0].set_yticks(range(min(top_n, len(top_overall))))
-    if 'GO_Term' in importance_df.columns:
-        axes[0, 0].set_yticklabels([f"{name[:30]}..." if len(str(name)) > 30 else str(name)
-                                    for name in top_overall['GO_Term'].head(top_n)], fontsize=8)
-    axes[0, 0].invert_yaxis()
-
-    # Lethal importance
-    top_lethal = lethal_df.head(top_n)
-    axes[0, 1].barh(range(top_n), top_lethal['Lethal_Importance'].values, color='red', alpha=0.7)
-    axes[0, 1].set_xlabel('Lethal Prediction Importance')
-    axes[0, 1].set_title(f'Top {top_n} GO Terms - Lethal Phenotype Prediction')
-    axes[0, 1].set_yticks(range(min(top_n, len(top_lethal))))
-    if 'GO_Term' in importance_df.columns:
-        axes[0, 1].set_yticklabels([f"{name[:30]}..." if len(str(name)) > 30 else str(name)
-                                    for name in top_lethal['GO_Term'].head(top_n)], fontsize=8)
-    axes[0, 1].invert_yaxis()
-
-    # Viable importance
-    top_viable = viable_df.head(top_n)
-    axes[1, 0].barh(range(top_n), top_viable['Viable_Importance'].values, color='green', alpha=0.7)
-    axes[1, 0].set_xlabel('Viable Prediction Importance')
-    axes[1, 0].set_title(f'Top {top_n} GO Terms - Viable Phenotype Prediction')
-    axes[1, 0].set_yticks(range(min(top_n, len(top_viable))))
-    if 'GO_Term' in importance_df.columns:
-        axes[1, 0].set_yticklabels([f"{name[:30]}..." if len(str(name)) > 30 else str(name)
-                                    for name in top_viable['GO_Term'].head(top_n)], fontsize=8)
-    axes[1, 0].invert_yaxis()
-
-    # Comparison plot
-    # Select top features from each category for comparison
-    comparison_features = set(list(top_lethal['GO_Term_Index'].head(10)) +
-                              list(top_viable['GO_Term_Index'].head(10)))
-    comparison_df = importance_df[importance_df['GO_Term_Index'].isin(comparison_features)]
-
-    x_pos = np.arange(len(comparison_df))
-    width = 0.35
-
-    axes[1, 1].bar(x_pos - width / 2, comparison_df['Lethal_Importance'], width,
-                   label='Lethal Importance', color='red', alpha=0.7)
-    axes[1, 1].bar(x_pos + width / 2, comparison_df['Viable_Importance'], width,
-                   label='Viable Importance', color='green', alpha=0.7)
-
-    axes[1, 1].set_xlabel('GO Terms')
-    axes[1, 1].set_ylabel('Importance Score')
-    axes[1, 1].set_title('Lethal vs Viable Importance Comparison')
-    axes[1, 1].set_xticks(x_pos)
-    if 'GO_Term' in importance_df.columns:
-        axes[1, 1].set_xticklabels([f"GO_{idx}" for idx in comparison_df['GO_Term_Index']],
-                                   rotation=45, ha='right')
-    axes[1, 1].legend()
-
-    plt.tight_layout()
-    plt.savefig('class_specific_feature_importance.png', dpi=300, bbox_inches='tight')
-    plt.show()
+    print(f"\n=== TOP {top_n} GO TERMS (Overall Importance) ===")
+    print(overall_df[['GO_Term', 'Overall_Importance', 'Overall_Std']].head(top_n))
 
     return overall_df, lethal_df, viable_df
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Neural Network for Gene Essentiality Prediction')
-    parser.add_argument('--arff_file', help='Path to ARFF file containing gene data')
-    parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training')
-    parser.add_argument('--test_size', type=float, default=0.2, help='Proportion of data for testing')
-    parser.add_argument('--hidden_units', nargs='+', type=int, default=[128, 64],
-                        help='Hidden layer sizes')
-    parser.add_argument('--dropout', type=float, default=0.3, help='Dropout rate')
+#
 
-    args = parser.parse_args()
 
-    # Load data
-    df, meta = load_arff_data(args.arff_file)
-    X, y, gene_names, label_encoder = prepare_data(df)
+def evaluate_and_analyse_predictions(model, X_test, y_test, gene_names_test, label_encoder):
+    """Comprehensive evaluation with detailed prediction analysis"""
+    print(f"\nEvaluating model and analysing predictions...")
 
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=args.test_size, random_state=42, stratify=y
+    # Get predictions
+    y_pred_proba = model.predict(X_test, verbose=0)
+    y_pred = (y_pred_proba > 0.5).astype(int).flatten()
+
+    # Basic metrics
+    test_results = model.evaluate(X_test, y_test, verbose=0)
+    test_loss = test_results[0]
+    test_acc = test_results[1]
+    test_precision = test_results[2] if len(test_results) > 2 else 0
+    test_recall = test_results[3] if len(test_results) > 3 else 0
+
+    try:
+        auc_score = roc_auc_score(y_test, y_pred_proba)
+    except Exception as e:
+        print(f"Warning: Could not calculate AUC score: {e}")
+        auc_score = 0.0
+
+    print(f"\nTest Results:")
+    print(f"Loss: {test_loss:.4f}")
+    print(f"Accuracy: {test_acc:.4f}")
+    print(f"Precision: {test_precision:.4f}")
+    print(f"Recall: {test_recall:.4f}")
+    print(f"AUC: {auc_score:.4f}")
+
+    print(f"\nDetailed Classification Report:")
+    print(classification_report(y_test, y_pred, target_names=label_encoder.classes_))
+
+    print(f"\nConfusion Matrix:")
+    cm = confusion_matrix(y_test, y_pred)
+    print(cm)
+
+    # Create detailed predictions DataFrame
+    predictions_df = pd.DataFrame({
+        'Gene_Name': gene_names_test.reset_index(drop=True),
+        'True_Label': [label_encoder.classes_[i] for i in y_test],
+        'True_Label_Numeric': y_test,
+        'Predicted_Label': [label_encoder.classes_[i] for i in y_pred],
+        'Predicted_Label_Numeric': y_pred,
+        'Prediction_Probability': y_pred_proba.flatten(),
+        'Confidence': np.abs(y_pred_proba.flatten() - 0.5),  # Distance from decision boundary
+        'Correct_Prediction': y_test == y_pred
+    })
+
+    # Add prediction categories
+    predictions_df['Prediction_Category'] = predictions_df.apply(
+        lambda row: 'True Positive' if (row['True_Label_Numeric'] == 1 and row['Predicted_Label_Numeric'] == 1)
+        else 'True Negative' if (row['True_Label_Numeric'] == 0 and row['Predicted_Label_Numeric'] == 0)
+        else 'False Positive' if (row['True_Label_Numeric'] == 0 and row['Predicted_Label_Numeric'] == 1)
+        else 'False Negative', axis=1
     )
 
-    print(f"\nTraining set: {X_train.shape[0]} samples")
+    # Sort by confidence (most confident predictions first)
+    predictions_df = predictions_df.sort_values('Confidence', ascending=False)
+
+    print(f"\n=== PREDICTION SUMMARY ===")
+    print(f"Total test samples: {len(predictions_df)}")
+    print(f"Correct predictions: {predictions_df['Correct_Prediction'].sum()}")
+    print(f"Incorrect predictions: {(~predictions_df['Correct_Prediction']).sum()}")
+
+    print(f"\nPrediction Categories:")
+    for category in predictions_df['Prediction_Category'].unique():
+        count = (predictions_df['Prediction_Category'] == category).sum()
+        print(f"  {category}: {count}")
+
+    # Show most confident correct predictions
+    print(f"\n=== TOP 10 MOST CONFIDENT CORRECT PREDICTIONS ===")
+    correct_preds = predictions_df[predictions_df['Correct_Prediction'] == True].head(10)
+    print(correct_preds[['Gene_Name', 'True_Label', 'Prediction_Probability', 'Confidence']].to_string(index=False))
+
+    # Show most confident incorrect predictions (these are interesting!)
+    print(f"\n=== TOP 10 MOST CONFIDENT INCORRECT PREDICTIONS ===")
+    incorrect_preds = predictions_df[predictions_df['Correct_Prediction'] == False].head(10)
+    if len(incorrect_preds) > 0:
+        print(incorrect_preds[
+            ['Gene_Name', 'True_Label', 'Predicted_Label', 'Prediction_Probability', 'Confidence']].to_string(
+            index=False))
+    else:
+        print("No incorrect predictions found!")
+
+    # Show predictions near decision boundary (uncertain predictions)
+    print(f"\n=== 10 MOST UNCERTAIN PREDICTIONS (near 0.5 probability) ===")
+    uncertain_preds = predictions_df.nsmallest(10, 'Confidence')
+    print(uncertain_preds[
+        ['Gene_Name', 'True_Label', 'Predicted_Label', 'Prediction_Probability', 'Confidence']].to_string(
+        index=False))
+
+    return predictions_df, test_loss, test_acc, test_precision, test_recall, auc_score
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Neural Network for Gene Essentiality Prediction')
+    parser.add_argument('-arff_file', required=True, help='Path to ARFF file containing gene data')
+    parser.add_argument('-epochs', type=int, default=100, help='Number of training epochs')
+    parser.add_argument('-batch_size', type=int, default=32, help='Batch size for training')
+    parser.add_argument('-test_size', type=float, default=0.2, help='Proportion of data for testing')
+    parser.add_argument('-hidden_units', nargs='+', type=int, default=[128, 64],
+                        help='Hidden layer sizes')
+    parser.add_argument('-dropout', type=float, default=0.3, help='Dropout rate')
+    parser.add_argument('-perm_repeats', type=int, default=1, help='Number of repeats for permutation importance')
+    parser.add_argument('-output_dir', dest="output_dir", required=True, help='Output directory (current contents will be deleted)')
+
+
+    options = parser.parse_args()
+
+    # Load data
+    result = load_arff_data(options.arff_file)
+    if result[0] is None:
+        print("Failed to load data. Exiting.")
+        return
+
+    # Ensure output directory exists and is empty
+    if os.path.exists(options.output_dir):
+        shutil.rmtree(options.output_dir)
+    os.makedirs(options.output_dir)
+
+    df, meta = result
+    X, y, gene_names, label_encoder = prepare_data(df)
+
+    # Split data with more control
+    X_train, X_test, y_train, y_test, genes_train, genes_test = train_test_split(
+        X, y, gene_names, test_size=options.test_size, random_state=42, stratify=y
+    )
+
+    print(f"\nData Split:")
+    print(f"Training set: {X_train.shape[0]} samples")
     print(f"Test set: {X_test.shape[0]} samples")
+    print(f"Training class distribution: {np.bincount(y_train)}")
+    print(f"Test class distribution: {np.bincount(y_test)}")
 
     # Create model
     model = create_model(
         input_dim=X.shape[1],
-        hidden_units=args.hidden_units,
-        dropout_rate=args.dropout
+        hidden_units=options.hidden_units,
+        dropout_rate=options.dropout
     )
 
     print(f"\nModel architecture:")
     model.summary()
 
     # Train model
-    print(f"\nTraining model for {args.epochs} epochs...")
+    print(f"\nTraining model for {options.epochs} epochs...")
 
     # Callbacks
     early_stopping = keras.callbacks.EarlyStopping(
@@ -389,58 +478,92 @@ def main():
         monitor='val_loss', factor=0.5, patience=10, min_lr=1e-6
     )
 
-    history = model.fit(
-        X_train, y_train,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        validation_split=0.2,
-        callbacks=[early_stopping, reduce_lr],
-        verbose=1
-    )
+    try:
+        history = model.fit(
+            X_train, y_train,
+            epochs=options.epochs,
+            batch_size=options.batch_size,
+            validation_split=0.2,
+            callbacks=[early_stopping, reduce_lr],
+            verbose=1
+        )
 
-    # Evaluate model
-    print(f"\nEvaluating model...")
-    test_loss, test_acc, test_precision, test_recall = model.evaluate(X_test, y_test, verbose=0)
+        print("\nTraining completed successfully!")
 
-    # Predictions
-    y_pred_proba = model.predict(X_test, verbose=0)
-    y_pred = (y_pred_proba > 0.5).astype(int).flatten()
+        # Comprehensive evaluation and prediction analysis
+        print("\nStarting evaluation phase...")
+        predictions_df, test_loss, test_acc, test_precision, test_recall, auc_score = evaluate_and_analyse_predictions(
+            model, X_test, y_test, genes_test, label_encoder
+        )
 
-    # Calculate AUC
-    auc_score = roc_auc_score(y_test, y_pred_proba)
+        # Plot training history
+        print("Plotting training history...")
+        plot_training_history(options, history)
 
-    print(f"\nTest Results:")
-    print(f"Accuracy: {test_acc:.4f}")
-    print(f"Precision: {test_precision:.4f}")
-    print(f"Recall: {test_recall:.4f}")
-    print(f"AUC: {auc_score:.4f}")
+        # Analyse feature importance
+        print("Starting feature importance analysis...")
+        go_term_columns = df.columns[1:-1]  # GO term column names
+        overall_importance, lethal_importance, viable_importance = analyse_feature_importance(
+            options, model, go_term_columns, X_test, y_test, options.perm_repeats
+        )
 
-    print(f"\nDetailed Classification Report:")
-    print(classification_report(y_test, y_pred, target_names=label_encoder.classes_))
+        # Save model and results
+        print("Saving results...")
+        model.save(os.path.join(options.output_dir,'gene_essentiality_model.keras'))
+        predictions_df.to_csv(os.path.join(options.output_dir,'test_predictions_detailed.csv'), index=False)
+        overall_importance.to_csv(os.path.join(options.output_dir,'overall_feature_importance.csv'), index=False)
+        lethal_importance.to_csv(os.path.join(options.output_dir,'lethal_feature_importance.csv'), index=False)
+        viable_importance.to_csv(os.path.join(options.output_dir,'viable_feature_importance.csv'), index=False)
 
-    print(f"\nConfusion Matrix:")
-    print(confusion_matrix(y_test, y_pred))
+        print(f"\n=== FILES SAVED ===")
+        print(f"Model: gene_essentiality_model.keras")
+        print(f"Detailed predictions: test_predictions_detailed.csv")
+        print(f"Feature importance files:")
+        print(f"  - overall_feature_importance.csv")
+        print(f"  - lethal_feature_importance.csv")
+        print(f"  - viable_feature_importance.csv")
 
-    # Plot training history
-    plot_training_history(history)
 
-    # Analyse feature importance with class-specific analysis
-    go_term_columns = df.columns[1:-1]  # GO term column names
-    overall_importance, lethal_importance, viable_importance = analyse_feature_importance(
-        model, go_term_columns, X_test, y_test
-    )
+        # Write final summary and important metrics to a report file
+        report_path = os.path.join(options.output_dir, 'final_report.txt')
+        with open(report_path, 'w') as report_file:
+            report_file.write("=== FINAL SUMMARY ===\n")
+            report_file.write(f"Model Performance:\n")
+            report_file.write(f"  Loss: {test_loss:.3f}\n")
+            report_file.write(f"  Accuracy: {test_acc:.3f}\n")
+            report_file.write(f"  Precision: {test_precision:.3f}\n")
+            report_file.write(f"  Recall: {test_recall:.3f}\n")
+            report_file.write(f"  AUC: {auc_score:.3f}\n")
+            report_file.write("\nConfusion Matrix:\n")
+            report_file.write(np.array2string(
+                confusion_matrix(y_test, (model.predict(X_test, verbose=0) > 0.5).astype(int).flatten())) + "\n")
+            report_file.write("\nClassification Report:\n")
+            report_file.write(
+                classification_report(y_test, (model.predict(X_test, verbose=0) > 0.5).astype(int).flatten(),
+                                      target_names=label_encoder.classes_))
+        print(f"\n=== FINAL SUMMARY ===")
+        print(f"Model Performance: Loss={test_loss:.3f}, Accuracy={test_acc:.3f}, AUC={auc_score:.3f}")
+        print(f"Full report written to {report_path}")
 
-    # Save model and results
-    model.save('gene_essentiality_model.keras')
-    overall_importance.to_csv('overall_feature_importance.csv', index=False)
-    lethal_importance.to_csv('lethal_feature_importance.csv', index=False)
-    viable_importance.to_csv('viable_feature_importance.csv', index=False)
 
-    print(f"\nModel saved as 'gene_essentiality_model.keras'")
-    print(f"Feature importance saved as:")
-    print(f"  - overall_feature_importance.csv")
-    print(f"  - lethal_feature_importance.csv")
-    print(f"  - viable_feature_importance.csv")
+    except Exception as e:
+        print(f"\nError during training or analysis: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+        # Try basic evaluation at least
+        try:
+            print("\nAttempting basic evaluation...")
+            test_results = model.evaluate(X_test, y_test, verbose=1)
+            test_acc = test_results[1]
+            print(f"Basic accuracy: {test_acc:.4f}")
+
+            # Save model at least
+            model.save(os.path.join(options.output_dir,'gene_essentiality_model_basic.keras'))
+            print("Model saved successfully")
+
+        except Exception as e2:
+            print(f"Even basic evaluation failed: {str(e2)}")
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ import gzip
 import csv
 
 def get_viability_go_data_yeast(gene_association_file, vi_inviable_genes):
-
+    #
     input = gzip.open(gene_association_file, 'rt', encoding='utf-8')
     input = csv.reader(input, delimiter='\t')
     for row in input:
