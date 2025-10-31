@@ -23,3 +23,5 @@ src/PhenGO/data/worm/genes_direct_and_inferred_for_WBPhenotype_0000062_11-08-202
 src/PhenGO/data/worm/lethal_terms_traversed_2025-08-12.tsv
 
 src/PhenGO/data/worm/wbphenotype_2025-08-12.obo
+
+*.tsv#

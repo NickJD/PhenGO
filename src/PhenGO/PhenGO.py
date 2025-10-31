@@ -16,8 +16,6 @@ except (ModuleNotFoundError, ImportError, NameError, TypeError) as error:
     #from alt_fly_phenotyping import *
     from go_handling import *
 
-
-
 def removed_unused_gos(vi_inviable_genes, unique_go_terms):
     # This optional function removes unused GO terms from the ARFF and FUNC outputs
     # It rebuilds the GO term list and each gene’s bin_vec to only include used terms
@@ -44,32 +42,105 @@ def removed_unused_gos(vi_inviable_genes, unique_go_terms):
         }
     return filtered_genes, filtered_go_terms
 
-def Incidents(options, Up, Seen, gr, obsolete_go_terms):
-    # Check if any node in Up has no parents
-    i = 0
-    for key in Up:
-        if key not in Seen:
-            parents = []
-            try:
-                try:
-                    Up.extend(gr.predecessors(key))
-                except (KeyError, ValueError, nx.exception.NetworkXError):
-                    if key in obsolete_go_terms:
-                        print(f"Warning: GO term '{key}' is obsolete but present in the gene association file. Skipping.")
-                        Seen.append(key)
-                        continue
-                    print(f"Error: The gene association file '{options.gene_association_file}' contains GO term '{key}' not present in the GO OBO file '{options.go_obo_file}'.")
-                    print("Please ensure both files are consistent. Exiting.")
-                    sys.exit(1)
-                Seen.append(key)
-            except (KeyError, ValueError):
-                print("Parent Missing")
-            if len(parents) > 0:
-                i = i + 1
-                if i > 0:
-                    return False
+
+
+def validate_go_terms_against_graph(vi_inviable_genes, gr, obsolete_go_terms, output_dir):
+    """
+    Validate all GO terms in gene data against the graph.
+    Collect and report all issues.
+    """
+    logger.info("Validating GO terms against OBO graph...")
+
+    # Collection for reporting
+    missing_terms = defaultdict(list)  # term -> [genes using it]
+    obsolete_terms_found = defaultdict(list)  # term -> [genes using it]
+    valid_terms_count = 0
+    total_terms_checked = 0
+
+    # Process each gene
+    for gene, values in vi_inviable_genes.items():
+        if 'go_list' not in values:
+            continue
+
+        cleaned_go_list = []
+
+        for go_term in values['go_list']:
+            total_terms_checked += 1
+
+            # Check if term is obsolete
+            if go_term in obsolete_go_terms:
+                obsolete_terms_found[go_term].append(gene)
+                continue
+
+            # Check if term exists in graph
+            if go_term not in gr:
+                missing_terms[go_term].append(gene)
+                continue
+
+            # Valid term
+            cleaned_go_list.append(go_term)
+            valid_terms_count += 1
+
+        # Update gene with cleaned GO list
+        vi_inviable_genes[gene]['go_list'] = cleaned_go_list
+
+    # Generate comprehensive report
+    report = {
+        'total_terms_checked': total_terms_checked,
+        'valid_terms': valid_terms_count,
+        'missing_terms': len(missing_terms),
+        'obsolete_terms': len(obsolete_terms_found),
+        'genes_affected': len(set(
+            [g for genes in missing_terms.values() for g in genes] +
+            [g for genes in obsolete_terms_found.values() for g in genes]
+        ))
+    }
+
+    # Write detailed report to file
+    report_file = os.path.join(output_dir, 'GO_term_validation_report.txt')
+    with open(report_file, 'w') as f:
+        f.write("GO TERM VALIDATION REPORT\n")
+        f.write("=" * 80 + "\n\n")
+
+        f.write(f"Total GO terms checked: {total_terms_checked}\n")
+        f.write(f"Valid terms: {valid_terms_count}\n")
+        f.write(f"Missing terms: {len(missing_terms)}\n")
+        f.write(f"Obsolete terms found: {len(obsolete_terms_found)}\n")
+        f.write(f"Genes affected: {report['genes_affected']}\n\n")
+
+        if missing_terms:
+            f.write("MISSING TERMS (not in OBO file):\n")
+            f.write("-" * 80 + "\n")
+            for term, genes in sorted(missing_terms.items()):
+                f.write(f"{term} - used by {len(genes)} gene(s)\n")
+                if len(genes) <= 10:
+                    f.write(f"  Genes: {', '.join(genes)}\n")
                 else:
-                    return True
+                    f.write(f"  Genes: {', '.join(genes[:10])}... ({len(genes) - 10} more)\n")
+            f.write("\n")
+
+        if obsolete_terms_found:
+            f.write("OBSOLETE TERMS (deprecated in OBO):\n")
+            f.write("-" * 80 + "\n")
+            for term, genes in sorted(obsolete_terms_found.items()):
+                f.write(f"{term} - used by {len(genes)} gene(s)\n")
+                if len(genes) <= 10:
+                    f.write(f"  Genes: {', '.join(genes)}\n")
+                else:
+                    f.write(f"  Genes: {', '.join(genes[:10])}... ({len(genes) - 10} more)\n")
+            f.write("\n")
+
+    # Console output
+    logger.info(f"GO term validation complete:")
+    logger.info(f"  Valid: {valid_terms_count}/{total_terms_checked}")
+    logger.info(f"  Missing: {len(missing_terms)} unique terms")
+    logger.info(f"  Obsolete: {len(obsolete_terms_found)} unique terms")
+
+    if missing_terms or obsolete_terms_found:
+        logger.warning(f"  {report['genes_affected']} genes affected by invalid GO terms")
+        logger.info(f"  Detailed report written to: {report_file}")
+
+    return vi_inviable_genes, report
 
 def Duplicates(Up):
     # Remove duplicates from Up
@@ -81,73 +152,60 @@ def Duplicates(Up):
             NodesSeen.append(node)
     return NewUp
 
-def assign_go_to_vector(options, vi_inviable_genes, gr, unique_go_terms, obsolete_go_terms):
-    # Assign GO terms to binary vectors for each gene
+
+
+def assign_go_to_vector(vi_inviable_genes, gr, unique_go_terms):
+    # Assumes GO terms have already been validated.
     bin_vec = [0] * len(unique_go_terms)
-    missing = []
-    debug = 0
     o_rep = []
+    genes_processed = 0
+    total_genes = len(vi_inviable_genes)
+
+    logger.info(f"Assigning GO terms to binary vectors for {total_genes} genes...")
+
     for gene, values in vi_inviable_genes.items():
-        debug = debug + 1
-        go_count = 0
-        Ancestors = []
-        Seen = []
-        Up = []
-        for t in range(1, len(values['go_list'])):
-            go_count = go_count + 1
-            if "GO" in values['go_list'][go_count]:
-                temp = values['go_list'][go_count]
-                temp = temp
-                o_rep.append(gene + "\t" + temp + "\n")
-                Up.append(temp)
-                Continue = True
-                Nodes = []
-                while Continue == True:
+        genes_processed += 1
+        if genes_processed % 1000 == 0:
+            logger.info(f"  Progress: {genes_processed}/{total_genes} genes")
 
-                    if Incidents(options, Up, Seen, gr, obsolete_go_terms) == False:
-                        for node in Up:
-                            if node not in Nodes:
-                                Nodes.append(node)
-                                try:
-                                    Up.extend(gr.predecessors(node))
-                                except (KeyError, ValueError):
-                                    print(f"Error: Node {node} not found in graph or invalid value")
-                        Up = Duplicates(Up)
-                    else:
-                        Continue = False
-        ###########################
-        Ancestors.extend(Up)
-        ModifiedAncestors = []
-        NodesSeen = []
-        for node in Ancestors:
-            if node not in NodesSeen:  # not a duplicate
-                ModifiedAncestors.append(node)
-                NodesSeen.append(node)
+        if 'go_list' not in values or not values['go_list']:
+            continue
 
-        del Ancestors[:]
-        for Node in ModifiedAncestors:
+        # Get all ancestors for each GO term
+        all_ancestors = set()
+
+        for go_term in values['go_list']:
+            if go_term not in gr:
+                # Already filtered by validation, but double-check
+                continue
+
+            # Add the term itself
+            all_ancestors.add(go_term)
+            o_rep.append(f"{gene}\t{go_term}\n")
+
+            # Get all ancestors (parents, grandparents, etc.)
             try:
-                bin_vec[unique_go_terms.index(Node)] = 1
-            except (KeyError, ValueError):
-                print(f"Missing node: {Node} ")
-                try:
-                    missing.index(Node)
-                    print(f"Node {Node} already marked as missing")
-                except (KeyError, ValueError):
-                    missing.append(Node)
-        for x in ModifiedAncestors:
-            o_rep.append(gene + "\t" + x + "\n")
+                ancestors = nx.ancestors(gr, go_term)
+                all_ancestors.update(ancestors)
+            except nx.NetworkXError as e:
+                logger.warning(f"Could not get ancestors for {go_term} in gene {gene}: {e}")
+                continue
+
+        # Set binary vector
+        for ancestor in all_ancestors:
+            try:
+                bin_vec[unique_go_terms.index(ancestor)] = 1
+                o_rep.append(f"{gene}\t{ancestor}\n")
+            except ValueError:
+                # Term not in unique_go_terms list
+                logger.debug(f"Ancestor {ancestor} not in unique_go_terms list")
+                continue
+
         vi_inviable_genes[gene]["bin_vec"] = bin_vec.copy()
         o_rep.append('\n')
         bin_vec = [0] * len(unique_go_terms)
-        try:
-            del Seen[:]
-            del Up[:]
-            del Ancestors[:]
-            del ModifiedAncestors[:]
-            del Nodes[:]
-        except NameError:
-            continue
+
+    logger.info(f"Vector assignment complete for {genes_processed} genes")
 
     return vi_inviable_genes, unique_go_terms, o_rep
 
@@ -280,10 +338,10 @@ def main():
 
     options = parser.parse_args()
 
-    print(f"Processing phenotype data for species: {options.species}")
-    print(f"Phenotype file: {options.phenotype_file}")
-    print(f"Gene association file: {options.gene_association_file}")
-    print(f"GO OBO file: {options.go_obo_file}")
+    logger.info(f"Processing phenotype data for species: {options.species}")
+    logger.info(f"Phenotype file: {options.phenotype_file}")
+    logger.info(f"Gene association file: {options.gene_association_file}")
+    logger.info(f"GO OBO file: {options.go_obo_file}")
 
 ### FLY
     if options.species.lower() == "fly":
@@ -291,14 +349,14 @@ def main():
         if options.fly_lethal_genes == None:
             pass
         elif options.fly_lethal_genes.lower() == "default":
-            print(f"Using default fly lethal genes file: : {DEFAULT_FLY_LETHAL_GENES_FILE}")
+            logger.info(f"Using default fly lethal genes file: : {DEFAULT_FLY_LETHAL_GENES_FILE}")
             options.fly_lethal_genes = DEFAULT_FLY_LETHAL_GENES_FILE
         else:
             if not os.path.exists(options.fly_lethal_genes):
-                print(f"Error: Fly lethal genes file {options.fly_lethal_genes} does not exist.")
+                logger.error(f"Error: Fly lethal genes file {options.fly_lethal_genes} does not exist.")
                 sys.exit(1)
             else:
-                print(f"Fly lethal genes file: {options.fly_lethal_genes}")
+                logger.info(f"Fly lethal genes file: {options.fly_lethal_genes}")
         ## If the user does not provide a FlyBase helper lines file, we use the default
         # if options.fly_helper_lines is None:
         #     options.fly_helper_lines = DEFAULT_FLY_HELPER_LINES_FILE
@@ -312,9 +370,9 @@ def main():
             options.fly_assignments = DEFAULT_FLY_SPECIES_FIELDS_FILE
         else:
             if not os.path.exists(options.fly_assignments):
-                print(f"Error: Fly assignments file {options.fly_assignments} does not exist.")
+                logger.error(f"Error: Fly assignments file {options.fly_assignments} does not exist.")
                 sys.exit(1)
-        print(f"Fly assignments file: {options.fly_assignments}")
+        logger.info(f"Fly assignments file: {options.fly_assignments}")
 
 
         # if options.driver_lines is None:
@@ -331,24 +389,24 @@ def main():
         if options.worm_lethal_genes == None:
             pass
         elif options.worm_lethal_genes.lower() == "default":
-            print(f"Using default worm lethal genes file: : {DEFAULT_WORM_LETHAL_GENES_FILE}")
+            logger.info(f"Using default worm lethal genes file: : {DEFAULT_WORM_LETHAL_GENES_FILE}")
             options.worm_lethal_genes = DEFAULT_WORM_LETHAL_GENES_FILE
         else:
             if not os.path.exists(options.worm_lethal_genes):
-                print(f"Error: Worm lethal genes file {options.worm_lethal_genes} does not exist.")
+                logger.error(f"Error: Worm lethal genes file {options.worm_lethal_genes} does not exist.")
                 sys.exit(1)
             else:
-                print(f"Worm lethal genes file: {options.worm_lethal_genes}")
+                logger.info(f"Worm lethal genes file: {options.worm_lethal_genes}")
         ## If the user does not provide a worm phenotypes file, we use the default
         if options.worm_phenotypes is None:
             options.worm_phenotypes = DEFAULT_WORM_LETHAL_PHENOTYPES_FILE
-            print(f"Using default Worm phenotypes file: {options.worm_phenotypes}")
+            logger.info(f"Using default Worm phenotypes file: {options.worm_phenotypes}")
         else:
             if not os.path.exists(options.worm_phenotypes):
-                print(f"Error: Worm phenotypes file {options.worm_phenotypes} does not exist.")
+                logger.error(f"Error: Worm phenotypes file {options.worm_phenotypes} does not exist.")
                 sys.exit(1)
             else:
-                print(f"Worm phenotypes file: {options.worm_phenotypes}")
+                logger.info(f"Worm phenotypes file: {options.worm_phenotypes}")
 
 ### MOUSE
     elif options.species.lower() == "mouse":
@@ -356,12 +414,12 @@ def main():
             options.mouse_phenotypes = DEFAULT_MOUSE_PHENOTYPES_FILE
         else:
             if not os.path.exists(options.mouse_phenotypes):
-                print(f"Error: Mouse phenotypes file {options.mouse_phenotypes} does not exist.")
+                logger.error(f"Error: Mouse phenotypes file {options.mouse_phenotypes} does not exist.")
                 sys.exit(1)
-        print(f"Mouse phenotypes file: {options.mouse_phenotypes}")
+        logger.info(f"Mouse phenotypes file: {options.mouse_phenotypes}")
 
 ###
-    print(f"Output directory: {options.output_dir}")
+    logger.info(f"Output directory: {options.output_dir}")
 
     # Ensure output directory exists and is empty
     if os.path.exists(options.output_dir):
@@ -371,7 +429,7 @@ def main():
     phenotype_files = [options.phenotype_file]
     gene_association_files = [options.gene_association_file]
     if len(phenotype_files) != 1 or len(gene_association_files) != 1:
-        print(f"Error: Expected one phenotype/gene_association file.")
+        logger.error(f"Error: Expected one phenotype/gene_association file.")
         sys.exit(1)
     for file in phenotype_files:
         if __name__ == '__main__':
@@ -401,14 +459,25 @@ def main():
 
     gr, unique_go_terms, obsolete_go_terms = obo_to_graph(options.output_dir, options.go_obo_file)
 
+    # First validate GO terms
+    vi_inviable_genes, validation_report = validate_go_terms_against_graph(vi_inviable_genes, gr, obsolete_go_terms, options.output_dir)
 
-    vi_inviable_genes, go_terms, Func = assign_go_to_vector(options, vi_inviable_genes, gr, unique_go_terms, obsolete_go_terms)
+    # Then assign to vectors (simplified assign_go_to_vector without Incidents)
+    vi_inviable_genes, go_terms, Func = assign_go_to_vector(vi_inviable_genes, gr, unique_go_terms)
+
+    # Report validation results
+    if validation_report['missing_terms'] > 0:
+        logger.warning(
+            f"WARNING: {validation_report['missing_terms']} GO terms from your gene "
+            f"association file are not present in the OBO file. These terms have been "
+            f"removed. See GO_term_validation_report.txt for details."
+        )
 
     # Filter out unused GO terms
     if options.filter_unused_gos == True:
         vi_inviable_genes, go_terms = removed_unused_gos(vi_inviable_genes, unique_go_terms)
 
-    # Write the filtered GO terms to a file - SLOW
+
     if options.gene_go_pheno == True:
         get_o_rep_output(vi_inviable_genes, Func, f"{options.output_dir}/{options.species}_OverRepresentation.tab")
 

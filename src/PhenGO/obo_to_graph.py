@@ -1,11 +1,11 @@
 import codecs
-import re
+import os
 import gzip
 import networkx as nx
 import json
+import logging
 
-
-
+logger = logging.getLogger(__name__)
 
 def define_graph_from_file(EdgesInput):
     # Graph creation
@@ -50,6 +50,7 @@ def getAncestors(goid, terms):
     return set(recursiveArray)
 
 def getTerm(stream):
+    # Extract next term block from OBO file.
     block = []
     for line in stream:
         if isinstance(line, bytes):
@@ -62,12 +63,19 @@ def getTerm(stream):
     return block
 
 def parseTagValue(term, obsolete_go_terms):
+    # Parse tag-value pairs from a term block
     data = {}
     for line in term:
-        tag = line.split(': ', 1)[0]
-        value = line.split(': ', 1)[1]
+        if ': ' not in line:
+            continue
+        tag, value = line.split(': ', 1)
         if tag == 'is_obsolete' and value == 'true':
-            obsolete_go_terms.append(term[0].split(': ')[1])  # Store the ID of the obsolete term
+            # Extract ID before marking as obsolete
+            for l in term:
+                if l.startswith('id: '):
+                    obsolete_id = l.split(': ', 1)[1]
+                    obsolete_go_terms.add(obsolete_id)
+                    break
             return None  # Skip obsolete terms
         if not tag in data:
             data[tag] = []
@@ -75,91 +83,100 @@ def parseTagValue(term, obsolete_go_terms):
     return data
 
 def obo_to_graph(output_dir, go_obo_file):
-    obo_file = gzip.open(go_obo_file, mode='rb')
-    go_child_parent_file = output_dir + '/GO_Children&Parents.txt'
-    grap_input_file = output_dir + '/GO_Children&Parents.txt'
-    refined_nodes_output = output_dir + '/Unique_GO_Nodes.txt'
+    # Parse OBO file and create GO term graph.
+    if go_obo_file.endswith('.gz'):
+        obo_file = gzip.open(go_obo_file, mode='rb')
+    else:
+        obo_file = open(go_obo_file, mode='rb')
+
+    logger.info("Parsing GO OBO file...")
+
     terms = {}
+    obsolete_go_terms = set()  # Use set for efficiency
+
+    # Skip to first term
     getTerm(obo_file)
-    obsolete_go_terms = []
-    # infinite loop to go through the obo file.
-    # Breaks when the term returned is empty, indicating end of file
-    while 1:
-        term = parseTagValue(getTerm(obo_file),obsolete_go_terms)
+
+    # Parse all terms
+    term_count = 0
+    obsolete_count = 0
+
+    while True:
+        term = parseTagValue(getTerm(obo_file), obsolete_go_terms)
+
         if term is None:
-            continue  # Skip obsolete terms
-        elif len(term) != 0:
-            termID = term['id'][0]
-            alt_ids = term.get('alt_id', [])
+            obsolete_count += 1
+            continue
+        elif len(term) == 0:
+            break
 
-            if 'is_a' in term:
-                termParents = [p.split()[0] for p in term['is_a']]
+        term_count += 1
+        termID = term['id'][0]
+        alt_ids = term.get('alt_id', [])
 
-                # Create main term entry
-                if termID not in terms:
-                    terms[termID] = {'p': [], 'c': []}
-                terms[termID]['p'] = termParents
+        if 'is_a' in term:
+            termParents = [p.split()[0] for p in term['is_a']]
+
+            # Create main term entry
+            if termID not in terms:
+                terms[termID] = {'p': [], 'c': []}
+            terms[termID]['p'] = termParents
+
+            # Add this term as child to each parent
+            for parent in termParents:
+                if parent not in terms:
+                    terms[parent] = {'p': [], 'c': []}
+                # Check for duplicates before adding
+                if termID not in terms[parent]['c']:
+                    terms[parent]['c'].append(termID)
+
+            # Handle alt_ids and prevent duplicate children
+            for alt_id in alt_ids:
+                if alt_id not in terms:
+                    terms[alt_id] = {'p': [], 'c': []}
+                terms[alt_id]['p'] = termParents
+
                 for parent in termParents:
                     if parent not in terms:
                         terms[parent] = {'p': [], 'c': []}
-                    terms[parent]['c'].append(termID)
-
-                # Handle alt_ids
-                for alt_id in alt_ids:
-                    if alt_id not in terms:
-                        terms[alt_id] = {'p': [], 'c': []}
-                    # Make alt_id point to the same parents
-                    terms[alt_id]['p'] = termParents
-                    for parent in termParents:
-                        if parent not in terms:
-                            terms[parent] = {'p': [], 'c': []}
+                    # Only add if not already present (prevent duplicates)
+                    if alt_id not in terms[parent]['c']:
                         terms[parent]['c'].append(alt_id)
 
-        else:
-            break
-    # while 1:
-    #     # get the term using the two parsing functions
-    #     term = parseTagValue(getTerm(obo_file))
-    #     if len(term) != 0:
-    #         termID = term['id'][0]
-    #         # only add to the structure if the term has an is_a tag
-    #         # the is_a value contain GO ID and term definition
-    #         # we only want the GO ID
-    #         if 'is_a' in term:
-    #             termParents = [p.split()[0] for p in term['is_a']]
-    #             if termID not in terms:
-    #                 # each GO ID will have two arrays of parents and children
-    #                 terms[termID] = {'p': [], 'c': []}
-    #             # append parents of the current term
-    #             terms[termID]['p'] = termParents
-    #             # for every parent term, add this current term as children
-    #             for termParent in termParents:
-    #                 if termParent not in terms:
-    #                     terms[termParent] = {'p': [], 'c': []}
-    #                 terms[termParent]['c'].append(termID)
-    #     else:
-    #         break
+    logger.info(f"Parsed {term_count} GO terms")
+    logger.info(f"Found {obsolete_count} obsolete terms")
+    logger.info(f"Total unique GO IDs: {len(terms)}")
 
-    go_child_parent_file = codecs.open(go_child_parent_file, encoding='utf-8', mode='w')
-    go_child_parent_file.write(json.dumps(terms, indent=4))
-    ############################################
+    # Write terms to file
+    go_child_parent_file = os.path.join(output_dir, 'GO_Children&Parents.txt')
+    with codecs.open(go_child_parent_file, encoding='utf-8', mode='w') as f:
+        f.write(json.dumps(terms, indent=4))
 
-    graph_input = open(grap_input_file, mode='r')
-    unique_nodes_out = open(refined_nodes_output, mode='w')
-    unique_nodes = []
-    go_seen = set()
-    attribute_list = []
-    for line in graph_input:
-        if "GO" in line:
-            if line not in go_seen:
-                node = line.split('""')
-                matches = re.findall(r'\"(.+?)\"', node[0])
-                go_t = '\n'.join(matches)
-                if go_t not in go_seen:
-                    go_seen.add(go_t)
-                    unique_nodes_out.write(go_t + '\n')
-                    unique_nodes.append(go_t)
-                    attribute_list.append("@attribute " + go_t + "{0,1}")
+    # Create NetworkX graph directly (no need to re-read file)
+    gr = nx.DiGraph()
 
-    gr = define_graph_from_file( f"{output_dir}/GO_Children&Parents.txt")
+    for node_id in terms.keys():
+        gr.add_node(node_id)
+
+    for node_id, node_data in terms.items():
+        for parent in node_data['p']:
+            if parent in gr and node_id in gr:
+                if not gr.has_edge(parent, node_id):
+                    gr.add_edge(parent, node_id)
+        for child in node_data['c']:
+            if node_id in gr and child in gr:
+                if not gr.has_edge(node_id, child):
+                    gr.add_edge(node_id, child)
+
+    logger.info(f"Created graph with {gr.number_of_nodes()} nodes and {gr.number_of_edges()} edges")
+
+    # Extract unique GO terms for attributes
+    unique_nodes = sorted(terms.keys())
+
+    # Write unique nodes
+    refined_nodes_output = os.path.join(output_dir, 'Unique_GO_Nodes.txt')
+    with open(refined_nodes_output, mode='w') as f:
+        for node in unique_nodes:
+            f.write(node + '\n')
+
     return gr, unique_nodes, obsolete_go_terms
