@@ -148,7 +148,7 @@ def obo_to_graph(output_dir, go_obo_file):
     logger.info(f"Total unique GO IDs: {len(terms)}")
 
     # Write terms to file
-    go_child_parent_file = os.path.join(output_dir, 'GO_Children&Parents.txt')
+    go_child_parent_file = os.path.join(output_dir, 'GO_Children&Parents.json')
     with codecs.open(go_child_parent_file, encoding='utf-8', mode='w') as f:
         f.write(json.dumps(terms, indent=4))
 

@@ -484,11 +484,20 @@ def main():
     write_arff_output(vi_inviable_genes, go_terms, f"{options.output_dir}/{options.species}_PhenGO.arff")
 
 
+    # Save arguments to a text file
+    from datetime import datetime
+    with open(options.output_dir+"/PhenGo_params.txt", "w") as outfile:
+        outfile.write(f"Timestamp: {datetime.now().isoformat()}\n")
+        for arg, value in vars(options).items():
+            outfile.write(f"{arg}: {value}\n")
 
+    logger.info("Thank you for using PhenGo -- A detailed user manual can be found at https://github.com/NickJD/PhenGO\n"
+          "Please report any issues to: https://github.com/NickJD/PhenGO\n#####")
 
 if __name__ == "__main__":
     main()
-    print("Complete")
+
+
 
 
 
