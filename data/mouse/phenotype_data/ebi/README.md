@@ -3,6 +3,31 @@ These files are downloaded from https://ftp.ebi.ac.uk/pub/databases/impc/all-dat
 Specifically this dir will contain phenotype annotation files from 'IMPC - International Mouse Phenotyping Consortium'.
 
 
+2015 - 3.0
+2016 - 4.2
+2017 - 5.0
+2018 - 7.0
+2019 - 9.2
+2020 - 11.0
+2021 - 13.0
+2022 - 16.0
+2023 - 19.0
+2024 - 20.0
+2025 - 22.1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 The provided README reads as follows:
 
 # Description

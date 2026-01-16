@@ -3,6 +3,8 @@ import sys
 import shutil
 import os
 import networkx as nx
+import logging
+from datetime import datetime
 
 try: # Try to import from the package if available
     from .obo_to_graph import obo_to_graph
@@ -338,6 +340,35 @@ def main():
 
     options = parser.parse_args()
 
+    # Create/clean the output directory early so we can create a timestamped log file there
+    # (we create it now to ensure the FileHandler can open the log path, and avoid removing
+    # it later which would delete the log file).
+    if os.path.exists(options.output_dir):
+        shutil.rmtree(options.output_dir)
+    os.makedirs(options.output_dir, exist_ok=True)
+
+    # Configure logging: send all logger output to a timestamped file inside the output dir.
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_path = os.path.join(options.output_dir, f"PhenGO_{timestamp}.log")
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    # Create a single formatter for both file and stdout handlers
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+
+    # Add a FileHandler if not already present for this path
+    if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', '') == os.path.abspath(log_path) for h in root_logger.handlers):
+        fh = logging.FileHandler(log_path, encoding='utf-8')
+    # Add a StreamHandler to stdout if not already present (so logs also appear on the console)
+    if not any(isinstance(h, logging.StreamHandler) and getattr(h, 'stream', None) is sys.stdout for h in root_logger.handlers):
+        sh = logging.StreamHandler(sys.stdout)
+        sh.setLevel(logging.INFO)
+        sh.setFormatter(formatter)
+        root_logger.addHandler(sh)
+    # Add a StreamHandler for stdout
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setFormatter(formatter)
+    root_logger.addHandler(sh)
+
     logger.info(f"Processing phenotype data for species: {options.species}")
     logger.info(f"Phenotype file: {options.phenotype_file}")
     logger.info(f"Gene association file: {options.gene_association_file}")
@@ -421,11 +452,6 @@ def main():
 ###
     logger.info(f"Output directory: {options.output_dir}")
 
-    # Ensure output directory exists and is empty
-    if os.path.exists(options.output_dir):
-        shutil.rmtree(options.output_dir)
-    os.makedirs(options.output_dir)
-
     phenotype_files = [options.phenotype_file]
     gene_association_files = [options.gene_association_file]
     if len(phenotype_files) != 1 or len(gene_association_files) != 1:
@@ -485,7 +511,6 @@ def main():
 
 
     # Save arguments to a text file
-    from datetime import datetime
     with open(options.output_dir+"/PhenGo_params.txt", "w") as outfile:
         outfile.write(f"Timestamp: {datetime.now().isoformat()}\n")
         for arg, value in vars(options).items():
@@ -496,27 +521,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
