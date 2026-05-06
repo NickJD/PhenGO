@@ -5,11 +5,34 @@ Phenotype OBO File Parser and Term Traversal Tool
 This script loads a phenotype OBO file, reads a list of phenotype terms from a text file,
 finds all direct children of those terms, and outputs them with descriptions to a text file.
 """
+import os as _os, sys as _sys
+if __name__ == "__main__" and not __package__:
+    import importlib.util as _ilu
+    _here   = _os.path.dirname(_os.path.abspath(__file__))
+    _src    = _os.path.normpath(_os.path.join(_here, '..', '..'))
+    _phengo = _os.path.dirname(_here)
+    if _src not in _sys.path:
+        _sys.path.insert(0, _src)
+    for _n, _f, _d in [
+        ('PhenGO',         _os.path.join(_phengo, '__init__.py'), _phengo),
+        ('PhenGO.scripts', _os.path.join(_here,   '__init__.py'), _here),
+    ]:
+        if _n not in _sys.modules:
+            _sp = _ilu.spec_from_file_location(_n, _f, submodule_search_locations=[_d])
+            _mo = _ilu.module_from_spec(_sp)
+            _mo.__path__ = [_d]
+            _sys.modules[_n] = _mo
+            _sp.loader.exec_module(_mo)
+    __package__ = 'PhenGO.scripts'
+    del _ilu, _here, _src, _phengo, _n, _f, _d, _sp, _mo
+
 
 import argparse
 import sys
 from collections import defaultdict
 from pathlib import Path
+import logging
+from ..constants import configure_logger
 
 
 class OBOParser:
@@ -26,7 +49,8 @@ class OBOParser:
         Args:
             obo_file_path (str): Path to the OBO file
         """
-        print(f"Parsing OBO file: {obo_file_path}")
+        logger = logging.getLogger('PhenGO.get_phenotype_terms')
+        logger.info(f"Parsing OBO file: {obo_file_path}")
 
         try:
             with open(obo_file_path, 'r', encoding='utf-8') as f:
@@ -88,13 +112,13 @@ class OBOParser:
                     self._save_term(current_term)
 
         except FileNotFoundError:
-            print(f"Error: OBO file '{obo_file_path}' not found.")
+            logger.error(f"Error: OBO file '{obo_file_path}' not found.")
             sys.exit(1)
         except Exception as e:
-            print(f"Error parsing OBO file: {e}")
+            logger.error(f"Error parsing OBO file: {e}")
             sys.exit(1)
 
-        print(f"Parsed {len(self.terms)} terms from OBO file")
+        logger.info(f"Parsed {len(self.terms)} terms from OBO file")
 
     def _save_term(self, term_data):
         """Save term data and build parent-child relationships."""
@@ -161,20 +185,22 @@ def load_term_list(term_list_file):
     Returns:
         list: List of term IDs
     """
-    print(f"Loading term list from: {term_list_file}")
+    configure_logger('PhenGO.get_phenotype_terms', enable_file=False)
+    logger = logging.getLogger('PhenGO.get_phenotype_terms')
+    logger.info(f"Loading term list from: {term_list_file}")
 
     try:
         with open(term_list_file, 'r', encoding='utf-8') as f:
             #terms = [line.strip() for line in f if line.strip() and not line.startswith('#')]
             terms = [line.split('\t', 1)[0] for line in f if line.strip() and not line.startswith('#')]
-        print(f"Loaded {len(terms)} terms from input file")
+        logger.info(f"Loaded {len(terms)} terms from input file")
         return terms
 
     except FileNotFoundError:
-        print(f"Error: Term list file '{term_list_file}' not found.")
+        logger.error(f"Error: Term list file '{term_list_file}' not found.")
         sys.exit(1)
     except Exception as e:
-        print(f"Error reading term list file: {e}")
+        logger.error(f"Error reading term list file: {e}")
         sys.exit(1)
 
 
@@ -186,7 +212,8 @@ def write_results(output_file, results):
         output_file (str): Path to output file
         results (list): List of (term_id, term_name, term_definition) tuples
     """
-    print(f"Writing results to: {output_file}")
+    logger = logging.getLogger('PhenGO.get_phenotype_terms')
+    logger.info(f"Writing results to: {output_file}")
 
     try:
         with open(output_file, 'w', encoding='utf-8') as f:
@@ -200,10 +227,10 @@ def write_results(output_file, results):
                     term_definition if term_definition else "No description available")
                 f.write(f"{term_id}\t{description}\n")
 
-        print(f"Results written successfully to {output_file}")
+        logger.info(f"Results written successfully to {output_file}")
 
     except Exception as e:
-        print(f"Error writing output file: {e}")
+        logger.error(f"Error writing output file: {e}")
         sys.exit(1)
 
 
@@ -257,11 +284,11 @@ Output format:
 
     # Validate input files exist
     if not Path(args.obo_file).exists():
-        print(f"Error: OBO file '{args.obo_file}' does not exist.")
+        logger.error(f"Error: OBO file '{args.obo_file}' does not exist.")
         sys.exit(1)
 
     if not Path(args.term_list).exists():
-        print(f"Error: Term list file '{args.term_list}' does not exist.")
+        logger.error(f"Error: Term list file '{args.term_list}' does not exist.")
         sys.exit(1)
 
     # Initialize parser and load OBO file
@@ -275,15 +302,15 @@ Output format:
     all_descendants = set()
     results = []
 
-    print("\nProcessing terms and finding all descendants...")
+    logger.info("\nProcessing terms and finding all descendants...")
 
     for term_id in input_terms:
         if args.verbose:
-            print(f"Processing term: {term_id}")
+            logger.info(f"Processing term: {term_id}")
 
         # Check if term exists in OBO file
         if term_id not in obo_parser.terms:
-            print(f"Warning: Term '{term_id}' not found in OBO file")
+            logger.warning(f"Warning: Term '{term_id}' not found in OBO file")
             continue
 
         # Get all descendants
@@ -291,10 +318,10 @@ Output format:
         all_descendants.update(descendant_ids)
 
         if args.verbose:
-            print(f"  Found {len(descendant_ids)} total descendants")
+            logger.info(f"  Found {len(descendant_ids)} total descendants")
 
     # Collect detailed info for all unique descendants
-    print(f"\nCollecting information for {len(all_descendants)} unique descendants...")
+    logger.info(f"\nCollecting information for {len(all_descendants)} unique descendants...")
 
     for term_id in sorted(all_descendants):
         term_info = obo_parser.get_term_info(term_id)
@@ -305,12 +332,12 @@ Output format:
         else:
             results.append((term_id, '', ''))
 
-    print(f"Found {len(results)} total descendants across {len(input_terms)} input terms")
+    logger.info(f"Found {len(results)} total descendants across {len(input_terms)} input terms")
 
     # Write results to output file
     write_results(args.results, results)
 
-    print("Processing completed successfully!")
+    logger.info("Processing completed successfully!")
 
 
 if __name__ == "__main__":

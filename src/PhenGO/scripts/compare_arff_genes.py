@@ -1,9 +1,32 @@
+import os as _os, sys as _sys
+if __name__ == "__main__" and not __package__:
+    import importlib.util as _ilu
+    _here   = _os.path.dirname(_os.path.abspath(__file__))
+    _src    = _os.path.normpath(_os.path.join(_here, '..', '..'))
+    _phengo = _os.path.dirname(_here)
+    if _src not in _sys.path:
+        _sys.path.insert(0, _src)
+    for _n, _f, _d in [
+        ('PhenGO',         _os.path.join(_phengo, '__init__.py'), _phengo),
+        ('PhenGO.scripts', _os.path.join(_here,   '__init__.py'), _here),
+    ]:
+        if _n not in _sys.modules:
+            _sp = _ilu.spec_from_file_location(_n, _f, submodule_search_locations=[_d])
+            _mo = _ilu.module_from_spec(_sp)
+            _mo.__path__ = [_d]
+            _sys.modules[_n] = _mo
+            _sp.loader.exec_module(_mo)
+    __package__ = 'PhenGO.scripts'
+    del _ilu, _here, _src, _phengo, _n, _f, _d, _sp, _mo
+
 import argparse
 import csv
 from collections import defaultdict
+import logging
+from ..constants import configure_logger
 
 try: # While calling this script through pipa
-    from .constants import *
+    from ..constants import *
 except (ModuleNotFoundError, ImportError, NameError, TypeError) as error:
     from constants import *
 
@@ -94,6 +117,8 @@ def main():
     grouped_results = compare_genes(genes_a, genes_b, all_terms)
 
     # Define desired order of groups
+    configure_logger('PhenGO.compare_arff_genes', enable_file=False)
+    logger = logging.getLogger('PhenGO.compare_arff_genes')
     status_order = ['MISSING_IN_B', 'LABEL_MISMATCH', 'GO_TERM_MISMATCH', 'EXACT_MATCH']
 
     # Write structured output grouped by Status
@@ -107,12 +132,12 @@ def main():
             for row in group:
                 writer.writerow(row)
 
-    print(f"\n✅ Grouped comparison complete. Output written to: {args.output}")
+    logger.info(f"\n✅ Grouped comparison complete. Output written to: {args.output}")
 
     # Print summary
-    print("\nSummary of differences:")
+    logger.info("\nSummary of differences:")
     for status in status_order:
-        print(f"  {status:17}: {len(grouped_results.get(status, []))}")
+        logger.info(f"  {status:17}: {len(grouped_results.get(status, []))}")
 
 if __name__ == "__main__":
     main()

@@ -70,14 +70,10 @@ def parseTagValue(term, obsolete_go_terms):
             continue
         tag, value = line.split(': ', 1)
         if tag == 'is_obsolete' and value == 'true':
-            # Extract ID before marking as obsolete
-            for l in term:
-                if l.startswith('id: '):
-                    obsolete_id = l.split(': ', 1)[1]
-                    obsolete_go_terms.add(obsolete_id)
-                    break
+            if 'id' in data:
+                obsolete_go_terms.add(data['id'][0])
             return None  # Skip obsolete terms
-        if not tag in data:
+        if tag not in data:
             data[tag] = []
         data[tag].append(value)
     return data

@@ -1,7 +1,30 @@
 
+import os as _os, sys as _sys
+if __name__ == "__main__" and not __package__:
+    import importlib.util as _ilu
+    _here   = _os.path.dirname(_os.path.abspath(__file__))
+    _src    = _os.path.normpath(_os.path.join(_here, '..', '..'))
+    _phengo = _os.path.dirname(_here)
+    if _src not in _sys.path:
+        _sys.path.insert(0, _src)
+    for _n, _f, _d in [
+        ('PhenGO',         _os.path.join(_phengo, '__init__.py'), _phengo),
+        ('PhenGO.scripts', _os.path.join(_here,   '__init__.py'), _here),
+    ]:
+        if _n not in _sys.modules:
+            _sp = _ilu.spec_from_file_location(_n, _f, submodule_search_locations=[_d])
+            _mo = _ilu.module_from_spec(_sp)
+            _mo.__path__ = [_d]
+            _sys.modules[_n] = _mo
+            _sp.loader.exec_module(_mo)
+    __package__ = 'PhenGO.scripts'
+    del _ilu, _here, _src, _phengo, _n, _f, _d, _sp, _mo
+
 import argparse
 import csv
 import os
+import logging
+from ..constants import configure_logger
 
 def parse_input_file(input_file):
     """
@@ -73,7 +96,8 @@ def write_raw_csv(records, output_file):
                 'phenotype': rec['phenotype'],
                 'simple_pheno': rec['simple_pheno']
             })
-    print(f"✅ Raw observations saved to: {output_file}")
+    logger = logging.getLogger('PhenGO.fly_pheno_summary')
+    logger.info(f"✅ Raw observations saved to: {output_file}")
 
 def summarise_by_gene(records):
     """
@@ -120,7 +144,8 @@ def write_summary_csv(summary_rows, output_file):
         writer.writeheader()
         for row in summary_rows:
             writer.writerow(row)
-    print(f"✅ Summary table saved to: {output_file}")
+    logger = logging.getLogger('PhenGO.fly_pheno_summary')
+    logger.info(f"✅ Summary table saved to: {output_file}")
 
 def main():
     parser = argparse.ArgumentParser(description="Summarise FlyBase allele phenotype data by gene (no pandas)")
@@ -129,23 +154,27 @@ def main():
     parser.add_argument('--summary_csv', required=True, help='Output summary CSV per gene')
     args = parser.parse_args()
 
+    # Configure logger (console only)
+    configure_logger('PhenGO.fly_pheno_summary', enable_file=False)
+    logger = logging.getLogger('PhenGO.fly_pheno_summary')
+
     if not os.path.exists(args.input):
-        print(f"❌ Input file not found: {args.input}")
+        logger.error(f"❌ Input file not found: {args.input}")
         return
 
-    print(f"📦 Reading input: {args.input}")
+    logger.info(f"📦 Reading input: {args.input}")
     records = parse_input_file(args.input)
 
-    print(f"📝 Writing raw observations CSV...")
+    logger.info(f"📝 Writing raw observations CSV...")
     write_raw_csv(records, args.raw_csv)
 
-    print(f"📊 Summarising per gene...")
+    logger.info(f"📊 Summarising per gene...")
     summary_rows = summarise_by_gene(records)
 
-    print(f"📝 Writing summary CSV...")
+    logger.info(f"📝 Writing summary CSV...")
     write_summary_csv(summary_rows, args.summary_csv)
 
-    print("✅ Done.")
+    logger.info("✅ Done.")
 
 if __name__ == '__main__':
     main()

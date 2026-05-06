@@ -195,7 +195,7 @@ def get_viability_go_data_fish(gene_association_file, vi_inviable_genes):
 
 def get_viability_go_data_worm(gene_association_file, vi_inviable_genes):
     # Extract GO terms for worm genes
-    logger.info("Processing mouse GO associations...")
+    logger.info("Processing worm GO associations...")
 
     processed_count = 0
     go_assigned_count = 0
@@ -265,7 +265,11 @@ def get_viability_go_data_mouse(gene_association_file, vi_inviable_genes):
                     continue
 
                 if row[0] == "MGI":
-                    gene = row[1]
+                    # FIX: was row[1] which is the MGI accession ID (e.g. "MGI:97490").
+                    # The phenotype handler (get_viable_inviable_mouse) uses row[5] which is
+                    # the gene *symbol* (e.g. "Trp53"). GAF column 2 (row[2]) is the DB Object
+                    # Symbol — the gene name — and this is what matches the phenotype dict keys.
+                    gene = row[2]
                     go = row[4]
 
                     #  Filter NOT qualifiers

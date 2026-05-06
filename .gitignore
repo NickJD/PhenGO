@@ -25,3 +25,5 @@ src/PhenGO/data/worm/lethal_terms_traversed_2025-08-12.tsv
 src/PhenGO/data/worm/wbphenotype_2025-08-12.obo
 
 *.tsv#
+
+.DS_Store

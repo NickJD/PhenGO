@@ -2,7 +2,11 @@ import gzip
 import csv
 import re
 from collections import defaultdict
-from constants import *
+import logging
+from .. import constants as _const
+# Get defaults from constants if available
+DEFAULT_FLY_HELPER_LINES_FILE = getattr(_const, 'DEFAULT_FLY_HELPER_LINES_FILE', None)
+configure_logger = _const.configure_logger
 
 
 def get_viable_inviable_fly(options, phenotype_file):
@@ -11,14 +15,18 @@ def get_viable_inviable_fly(options, phenotype_file):
     """
     vi_inviable_genes = defaultdict(list)
 
-    # Load helper lines (driver genes)
+    # Load helper lines (driver genes) if a helper-lines file is configured
     helper_lines_set = set()
-    try:
-        with gzip.open(DEFAULT_FLY_HELPER_LINES_FILE, 'rt', encoding='utf-8') as f:
-            reader = csv.reader(f, delimiter='\t')
-            helper_lines_set = {row[2] for row in reader if len(row) > 2}
-    except Exception as e:
-        print(f"Warning: Could not load helper lines file: {e}")
+    if DEFAULT_FLY_HELPER_LINES_FILE:
+        try:
+            with gzip.open(DEFAULT_FLY_HELPER_LINES_FILE, 'rt', encoding='utf-8') as f:
+                reader = csv.reader(f, delimiter='\t')
+                helper_lines_set = {row[2] for row in reader if len(row) > 2}
+        except Exception as e:
+            # Configure logger for this module (console only)
+            configure_logger('PhenGO.alt_fly_phenotyping', enable_file=False)
+            logger = logging.getLogger('PhenGO.alt_fly_phenotyping')
+            logger.warning(f"Could not load helper lines file: {e}")
 
     # Driver line patterns for better detection
     driver_patterns = [
@@ -143,7 +151,8 @@ def get_viable_inviable_fly(options, phenotype_file):
                 continue
 
             if 'HT1B[KK112342]' in str(row):
-                print(f"Debugging row with HT1B: {row}")
+                logger = logging.getLogger('PhenGO.alt_fly_phenotyping')
+                logger.debug(f"Debugging row with HT1B: {row}")
             try:
                 # Determine format by column count
                 is_format1 = len(row) == 4
@@ -163,22 +172,24 @@ def get_viable_inviable_fly(options, phenotype_file):
                     # Parse 'with' clause from phenotype
                     clean_phenotype, with_components = parse_with_clause_from_phenotype(phenotype_field)
                     if with_components:
-                        print()
+                        # minor debug: with components present
+                        pass
 
                 else:
                     # Format 2: 7 columns
                     # Column 0: primary gene allele and secondary gene (with clause equivalent) separated by '/'
                     # Column 1:
                     # Column 2: phenotype
-                    secondary_genes = row[0].split('/')[1:] if row[0] and '/' in row[0] else None
+                    secondary_genes = row[0].split('/')[1:] if row[0] and '/' in row[0] else []
                     primary_gene_allele = row[0].split('/')[0] if '/' in row[0] else row[0]
                     clean_phenotype = row[2]
 
                     # Secondary gene becomes the 'with' component
                     #with_components = [secondary_genes] if secondary_genes else []
-                    with_components = [s.strip() for s in secondary_genes if s.strip()]
+                    with_components = [s.strip() for s in secondary_genes if s and s.strip()]
                     if with_components:
-                        print()
+                        # minor debug: with components present
+                        pass
 
                 # Extract primary gene name
                 primary_gene = extract_gene_name(primary_gene_allele)
@@ -198,20 +209,21 @@ def get_viable_inviable_fly(options, phenotype_file):
 
                 # Debug for specific genes
                 if '5-HT1B' in str(row):
-                    print(f"5-HT1B Debug:")
-                    print(f"  Row: {row}")
-                    print(f"  Format: {'1' if is_format1 else '2'}")
-                    print(f"  Primary gene: {primary_gene}")
-                    print(f"  Clean phenotype: '{clean_phenotype}'")
-                    print(f"  Phenotype class: '{phenotype_class}'")
-                    print(f"  With components: {with_components}")
-                    print()
+                    logger = logging.getLogger('PhenGO.alt_fly_phenotyping')
+                    logger.debug("5-HT1B Debug:")
+                    logger.debug(f"  Row: {row}")
+                    logger.debug(f"  Format: {'1' if is_format1 else '2'}")
+                    logger.debug(f"  Primary gene: {primary_gene}")
+                    logger.debug(f"  Clean phenotype: '{clean_phenotype}'")
+                    logger.debug(f"  Phenotype class: '{phenotype_class}'")
+                    logger.debug(f"  With components: {with_components}")
 
                 #if phenotype_class in ['lethal', 'viable']:
                 vi_inviable_genes[primary_gene].append(phenotype_class)
 
             except Exception as e:
-                print(f"Error processing row {row}: {e}")
+                logger = logging.getLogger('PhenGO.alt_fly_phenotyping')
+                logger.error(f"Error processing row {row}: {e}")
                 continue
 
     # Final processing
@@ -224,9 +236,10 @@ def get_viable_inviable_fly(options, phenotype_file):
         # Set value to a single string: either "viable" or "lethal"
         vi_inviable_genes[gene] = "lethal" if "lethal" in statuses else "viable"
 
-    print(f"Species: fly")
-    print(f"Lethal genes: {sum(1 for v in vi_inviable_genes.values() if v == 'lethal')}")
-    print(f"Viable genes: {sum(1 for v in vi_inviable_genes.values() if v == 'viable')}")
+    logger = logging.getLogger('PhenGO.alt_fly_phenotyping')
+    logger.info(f"Species: fly")
+    logger.info(f"Lethal genes: {sum(1 for v in vi_inviable_genes.values() if v == 'lethal')}")
+    logger.info(f"Viable genes: {sum(1 for v in vi_inviable_genes.values() if v == 'viable')}")
 
     return dict(vi_inviable_genes)
 

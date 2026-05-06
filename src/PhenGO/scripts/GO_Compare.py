@@ -5,15 +5,39 @@ ARFF GO Term Analysis Script
 This script analyzes two ARFF files to compare GO term distributions between
 lethal and viable genes, providing comprehensive statistics and comparisons.
 """
+import os as _os, sys as _sys
+if __name__ == "__main__" and not __package__:
+    import importlib.util as _ilu
+    _here   = _os.path.dirname(_os.path.abspath(__file__))
+    _src    = _os.path.normpath(_os.path.join(_here, '..', '..'))
+    _phengo = _os.path.dirname(_here)
+    if _src not in _sys.path:
+        _sys.path.insert(0, _src)
+    for _n, _f, _d in [
+        ('PhenGO',         _os.path.join(_phengo, '__init__.py'), _phengo),
+        ('PhenGO.scripts', _os.path.join(_here,   '__init__.py'), _here),
+    ]:
+        if _n not in _sys.modules:
+            _sp = _ilu.spec_from_file_location(_n, _f, submodule_search_locations=[_d])
+            _mo = _ilu.module_from_spec(_sp)
+            _mo.__path__ = [_d]
+            _sys.modules[_n] = _mo
+            _sp.loader.exec_module(_mo)
+    __package__ = 'PhenGO.scripts'
+    del _ilu, _here, _src, _phengo, _n, _f, _d, _sp, _mo
+
 
 import argparse
 import csv
 from collections import defaultdict, Counter
 import statistics
 import math
+import logging
+import os
+import sys
 
 try:
-    from .constants import *
+    from ..constants import *
 except (ModuleNotFoundError, ImportError, NameError, TypeError) as error:
     try:
         from constants import *
@@ -213,7 +237,10 @@ def write_summary_statistics(output_file, summary_a, summary_b, file_a_name, fil
             'Percent_Change': f"{((lethal_ratio_a - lethal_ratio_b) / lethal_ratio_b * 100) if lethal_ratio_b > 0 else 0:.2f}%"
         })
 
-    print(f"Summary statistics written to: {summary_file}")
+    logger = logging.getLogger('PhenGO.GO_Compare')
+    logger.info(f"Summary statistics written to: {summary_file}")
+
+
 
 
 def write_top_go_terms(output_file, stats_a, stats_b, file_a_name, file_b_name, top_n=50):
@@ -265,7 +292,8 @@ def write_top_go_terms(output_file, stats_a, stats_b, file_a_name, file_b_name, 
                     'B_Enrichment': f"{stat_b.get('enrichment_ratio', 0):.4f}"
                 })
 
-    print(f"Top GO terms analysis written to: {top_terms_file}")
+    logger = logging.getLogger('PhenGO.GO_Compare')
+    logger.info(f"Top GO terms analysis written to: {top_terms_file}")
 
 
 def main():
@@ -278,34 +306,44 @@ def main():
                         help="Second ARFF file for comparison")
     parser.add_argument("-o", dest="output", required=True,
                         help="Output CSV file prefix (multiple files will be generated)")
+    parser.add_argument("-output_dir", dest="output_dir", required=False, default='.',
+                        help="Directory to write output files (default: current directory)")
     parser.add_argument("--top-n", dest="top_n", type=int, default=50,
                         help="Number of top GO terms to report for each category (default: 50)")
 
     args = parser.parse_args()
 
-    print(f"Loading ARFF files...")
+    # Prepare output directory and logging
+    args.output_dir = os.path.abspath(args.output_dir)
+    if not os.path.exists(args.output_dir):
+        os.makedirs(args.output_dir)
+
+    logger = configure_logger('PhenGO.GO_Compare', enable_file=True, log_dir=args.output_dir, logfile_name='GO_Compare.log', level=logging.INFO)
+
+    logger.info("Loading ARFF files...")
     genes_a, terms_a = parse_arff_with_terms(args.arff_a)
     genes_b, terms_b = parse_arff_with_terms(args.arff_b)
 
-    print(f"Dataset A: {len(genes_a)} genes, {len(terms_a)} GO terms")
-    print(f"Dataset B: {len(genes_b)} genes, {len(terms_b)} GO terms")
+    logger.info(f"Dataset A: {len(genes_a)} genes, {len(terms_a)} GO terms")
+    logger.info(f"Dataset B: {len(genes_b)} genes, {len(terms_b)} GO terms")
 
     # Get union of all GO terms
     all_terms = sorted(set(terms_a).union(set(terms_b)))
-    print(f"Total unique GO terms: {len(all_terms)}")
+    logger.info(f"Total unique GO terms: {len(all_terms)}")
 
     # Calculate statistics for both datasets
-    print("Calculating GO term statistics...")
+    logger.info("Calculating GO term statistics...")
     stats_a, summary_a = calculate_go_term_stats(genes_a, all_terms)
     stats_b, summary_b = calculate_go_term_stats(genes_b, all_terms)
 
     # Compare distributions
-    print("Comparing GO term distributions...")
+    logger.info("Comparing GO term distributions...")
     comparisons = compare_go_distributions(stats_a, stats_b, all_terms, summary_a, summary_b)
 
     # Write detailed comparison
-    print("Writing detailed comparison...")
-    with open(args.output, 'w', newline='') as csvfile:
+    logger.info("Writing detailed comparison...")
+    output_path = os.path.join(args.output_dir, args.output)
+    with open(output_path, 'w', newline='') as csvfile:
         fieldnames = [
             'GO_Term',
             'A_Total_Count', 'A_Total_Freq', 'A_Lethal_Count', 'A_Lethal_Freq',
@@ -345,19 +383,17 @@ def main():
             })
 
     # Write additional analysis files
-    write_summary_statistics(args.output, summary_a, summary_b, args.arff_a, args.arff_b)
-    write_top_go_terms(args.output, stats_a, stats_b, args.arff_a, args.arff_b, args.top_n)
+    write_summary_statistics(output_path, summary_a, summary_b, args.arff_a, args.arff_b)
+    write_top_go_terms(output_path, stats_a, stats_b, args.arff_a, args.arff_b, args.top_n)
 
-    print(f"\n✅ GO term analysis complete!")
-    print(f"Main comparison written to: {args.output}")
-    print(f"Additional files generated with prefix: {args.output.replace('.csv', '')}")
+    logger.info("\n✅ GO term analysis complete!")
+    logger.info(f"Main comparison written to: {output_path}")
+    logger.info(f"Additional files generated with prefix: {output_path.replace('.csv', '')}")
 
     # Print quick summary
-    print(f"\nQuick Summary:")
-    print(
-        f"Dataset A - Total: {summary_a['total_genes']}, Lethal: {summary_a['lethal_genes']}, Viable: {summary_a['viable_genes']}")
-    print(
-        f"Dataset B - Total: {summary_b['total_genes']}, Lethal: {summary_b['lethal_genes']}, Viable: {summary_b['viable_genes']}")
+    logger.info(f"\nQuick Summary:")
+    logger.info(f"Dataset A - Total: {summary_a['total_genes']}, Lethal: {summary_a['lethal_genes']}, Viable: {summary_a['viable_genes']}")
+    logger.info(f"Dataset B - Total: {summary_b['total_genes']}, Lethal: {summary_b['lethal_genes']}, Viable: {summary_b['viable_genes']}")
 
 
 if __name__ == "__main__":

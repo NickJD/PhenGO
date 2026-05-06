@@ -3,11 +3,10 @@ import csv
 from collections import defaultdict
 import logging
 
-# Set up logging
 logger = logging.getLogger(__name__)
 
 try: # While calling this script through pip
-    from .constants import *
+    from ..constants import *
 except (ModuleNotFoundError, ImportError, NameError, TypeError) as error:
     from constants import *
 
@@ -124,19 +123,20 @@ def get_viable_inviable_fly(options, phenotype_file):
                     # Classify remaining simple genotypes
                     if any("lethal" in x.lower() for x in row):
                         vi_inviable_genes[base_gene].append("lethal")
-                    elif any("viable" in x.lower() for x in row):
-                        vi_inviable_genes[base_gene].append("viable")
                     else:
-                        vi_inviable_genes[base_gene].append("other")
+                        # Non-lethal phenotypes (including explicit "viable" and any
+                        # other observed phenotype) → viable. If the fly survived the
+                        # experiment with only non-lethal phenotypic defects, the gene
+                        # is de-facto viable.
+                        vi_inviable_genes[base_gene].append("viable")
 
                 else:
                     # Permissive: include all phenotypes regardless of complexity
                     if any("lethal" in x.lower() for x in row):
                         vi_inviable_genes[base_gene].append("lethal")
-                    elif any("viable" in x.lower() for x in row):
-                        vi_inviable_genes[base_gene].append("viable")
                     else:
-                        vi_inviable_genes[base_gene].append("other")
+                        # Same logic as above — non-lethal observation → viable.
+                        vi_inviable_genes[base_gene].append("viable")
 
     except Exception as e:
         logger.error(f"Error reading fly phenotype file: {e}")
@@ -153,7 +153,7 @@ def get_viable_inviable_fly(options, phenotype_file):
             filtered_count['mixed_phenotype'] += 1
             continue
 
-        # Priority: lethal > viable > other
+        # Priority: lethal > viable
         final_genes[gene] = "lethal" if has_lethal else "viable"
 
     # Report statistics
@@ -203,12 +203,13 @@ def get_viable_inviable_fish(options, phenotype_file):
                 if ("lethal" in phenotype_desc and "semi-lethal" not in phenotype_desc) or \
                         "dead" in phenotype_desc:
                     vi_inviable_genes[gene_id].append("lethal")
-                elif ("viable" in phenotype_desc and "semi-viable" not in phenotype_desc) or \
-                        "alive" in phenotype_desc:
-                    vi_inviable_genes[gene_id].append("viable")
                 else:
-                    # ISSUE: Inconsistent with fly - uses gene_id here but gene_id.split('[')[0] below
-                    vi_inviable_genes[gene_id].append("other")
+                    # Any non-lethal phenotype (explicit "viable"/"alive" OR morphological
+                    # phenotypes like "abnormal fin morphology") is treated as viable.
+                    # If the gene was studied in ZFIN and the organism survived with only
+                    # non-lethal phenotypes, the gene is de-facto viable.
+                    # Semi-lethal/semi-viable are included here as they do not indicate full lethality.
+                    vi_inviable_genes[gene_id].append("viable")
 
     except Exception as e:
         logger.error(f"Error reading fish phenotype file: {e}")
