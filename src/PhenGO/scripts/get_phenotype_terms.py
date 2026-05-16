@@ -185,7 +185,6 @@ def load_term_list(term_list_file):
     Returns:
         list: List of term IDs
     """
-    configure_logger('PhenGO.get_phenotype_terms', enable_file=False)
     logger = logging.getLogger('PhenGO.get_phenotype_terms')
     logger.info(f"Loading term list from: {term_list_file}")
 
@@ -281,6 +280,9 @@ Output format:
     )
 
     args = parser.parse_args()
+
+    configure_logger('PhenGO.get_phenotype_terms', enable_file=False)
+    logger = logging.getLogger('PhenGO.get_phenotype_terms')
 
     # Validate input files exist
     if not Path(args.obo_file).exists():

@@ -227,7 +227,7 @@ def get_viability_go_data_worm(gene_association_file, vi_inviable_genes):
                     processed_count += 1
 
     except Exception as e:
-        logger.error(f"Error processing mouse GO associations: {e}")
+        logger.error(f"Error processing worm GO associations: {e}")
         raise
 
     genes_with_go = {gene: value for gene, value in vi_inviable_genes.items()

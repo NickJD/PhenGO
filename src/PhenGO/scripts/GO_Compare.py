@@ -29,21 +29,13 @@ if __name__ == "__main__" and not __package__:
 
 import argparse
 import csv
-from collections import defaultdict, Counter
-import statistics
-import math
+from collections import Counter
 import logging
 import os
-import sys
 
-try:
-    from ..constants import *
-except (ModuleNotFoundError, ImportError, NameError, TypeError) as error:
-    try:
-        from constants import *
-    except:
-        # Default version if constants not available
-        PhenGO_VERSION = "1.0"
+from ..constants import configure_logger, PhenGO_VERSION
+
+logger = logging.getLogger(__name__)
 
 
 def parse_arff_with_terms(file_path):
@@ -237,9 +229,7 @@ def write_summary_statistics(output_file, summary_a, summary_b, file_a_name, fil
             'Percent_Change': f"{((lethal_ratio_a - lethal_ratio_b) / lethal_ratio_b * 100) if lethal_ratio_b > 0 else 0:.2f}%"
         })
 
-    logger = logging.getLogger('PhenGO.GO_Compare')
     logger.info(f"Summary statistics written to: {summary_file}")
-
 
 
 
@@ -292,7 +282,6 @@ def write_top_go_terms(output_file, stats_a, stats_b, file_a_name, file_b_name, 
                     'B_Enrichment': f"{stat_b.get('enrichment_ratio', 0):.4f}"
                 })
 
-    logger = logging.getLogger('PhenGO.GO_Compare')
     logger.info(f"Top GO terms analysis written to: {top_terms_file}")
 
 

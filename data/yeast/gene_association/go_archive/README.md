@@ -1,5 +1,10 @@
 https://release.geneontology.org/index.html
 go_archive data:
+2010 - release-2010-01-01
+2011 - release-2011-01-01
+2012 - release-2012-01-01
+2013 - release-2013-01-01
+2014 - release-2014-01-01
 2015 - release-2015-01-01
 2016 - release-2016-01-01
 2017 - release-2017-01-01

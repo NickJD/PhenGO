@@ -3,7 +3,6 @@ import sys
 import shutil
 import os
 import networkx as nx
-import logging
 from datetime import datetime
 
 # ── Allow direct execution: python .../core/PhenGO.py  ─────────────────────
@@ -36,7 +35,7 @@ from .phenotype_handling import *
 from .go_handling import *
 
 def removed_unused_gos(vi_inviable_genes, unique_go_terms):
-    # This optional function removes unused GO terms from the ARFF and FUNC outputs
+    # This optional function removes unused GO terms from the ARFF and go_enrichment outputs
     # It rebuilds the GO term list and each gene's bin_vec to only include used terms
     # collect *all* GOs assigned to at least 1 gene
     used_gos = set()
@@ -208,7 +207,7 @@ def assign_go_to_vector(vi_inviable_genes, gr, unique_go_terms):
                 logger.warning(f"Could not get ancestors for {go_term} in gene {gene}: {e}")
                 continue
 
-        # Set binary vector and record FUNC output entries (one write per unique term)
+        # Set binary vector and record overrepresentation output entries (one write per unique term)
         for ancestor in all_ancestors:
             idx = go_term_index.get(ancestor)
             if idx is not None:
@@ -227,7 +226,7 @@ def assign_go_to_vector(vi_inviable_genes, gr, unique_go_terms):
 
 
 def get_o_rep_output(vi_inviable_genes, o_rep, output_file):
-    # Generate FUNC/Overrepresentation output file
+    # Generate overrepresentation analysis output file
     new_o_rep = []
     geneSeen = set()
     tempySeen = set()
@@ -267,27 +266,29 @@ def get_o_rep_output(vi_inviable_genes, o_rep, output_file):
 
 def write_func_output(vi_inviable_genes, output_dir, species):
     """
-    Write GO enrichment/over-representation analysis ready files into a
-    dedicated 'FUNC/' subdirectory of output_dir.
+    Write GO enrichment / over-representation analysis ready files into a
+    dedicated 'go_enrichment/' subdirectory of output_dir.
 
-    Four files are produced under {output_dir}/FUNC/:
+    Four files are produced under {output_dir}/go_enrichment/:
 
-    1. {species}_FUNC_binary.tab      — GENE <TAB> GO:XXXX <TAB> 0|1
-    2. {species}_FUNC_annotations.tab — GENE <TAB> GO:XXXX  (all genes)
-    3. {species}_FUNC_study_set.txt   — lethal/inviable genes, one per line
-    4. {species}_FUNC_population.txt  — all genes with GO terms, one per line
+    1. {species}_binary.tab      — GENE <TAB> GO:XXXX <TAB> 0|1
+    2. {species}_annotations.tab — GENE <TAB> GO:XXXX  (all genes)
+    3. {species}_study_set.txt   — lethal/inviable genes, one per line
+    4. {species}_population.txt  — all genes with GO terms, one per line
 
+    These files are tool-agnostic and compatible with FUNC, TopGO, clusterProfiler,
+    g:Profiler, GOrilla, PANTHER, and similar overrepresentation analysis frameworks.
     GO terms are the direct annotations after OBO validation and optional
     unused-GO filtering, consistent with the ARFF feature set.
     Genes without GO terms are excluded.
     """
-    func_dir = os.path.join(output_dir, "FUNC")
+    func_dir = os.path.join(output_dir, "go_enrichment")
     os.makedirs(func_dir, exist_ok=True)
 
-    binary_path = os.path.join(func_dir, f"{species}_FUNC_binary.tab")
-    annot_path  = os.path.join(func_dir, f"{species}_FUNC_annotations.tab")
-    study_path  = os.path.join(func_dir, f"{species}_FUNC_study_set.txt")
-    pop_path    = os.path.join(func_dir, f"{species}_FUNC_population.txt")
+    binary_path = os.path.join(func_dir, f"{species}_binary.tab")
+    annot_path  = os.path.join(func_dir, f"{species}_annotations.tab")
+    study_path  = os.path.join(func_dir, f"{species}_study_set.txt")
+    pop_path    = os.path.join(func_dir, f"{species}_population.txt")
 
     binary_lines = []
     annot_lines  = []
@@ -396,14 +397,14 @@ def main():
 
     optional = parser.add_argument_group('Optional parameters')
     optional.add_argument('-no_filter_unused_gos', dest='filter_unused_gos', action='store_false', required=False,
-                        help='Disable filtering of unused GO terms from the FUNC and ARFF output (filtering is ON by default)')
+        help='Disable filtering of unused GO terms from the go_enrichment and ARFF output (filtering is ON by default)')
     optional.add_argument('-filter_mixed_terms', dest='filter_mixed_terms', action='store_true', required=False,
                         help='Filter out genes which have both lethal and viable phenotypes - '
                              'Terms not specifically lethal/viable are not counted in this (default: False)')
     optional.add_argument('-gene_go_pheno', dest='gene_go_pheno', action='store_true', required=False,
-                        help='(Deprecated — FUNC files are now always written. Kept for backward compatibility.)'
+                        help='(Deprecated — go_enrichment files are now always written. Kept for backward compatibility.)'
                              ' Previously output a single Gene-GO-Phenotype file; that file is now'
-                             ' superseded by the four {species}_FUNC_*.tab/txt files generated every run.')
+                             ' superseded by the four {species}_*.tab/txt files in go_enrichment/ generated every run.')
 
     fly_args = parser.add_argument_group('Fly specific parameters')
     fly_args.add_argument('-fly_lethal_genes', dest='fly_lethal_genes', required=False,
@@ -411,13 +412,25 @@ def main():
     fly_args.add_argument('-fly_assignments', dest='fly_assignments', required=False,
                         help='Provide TSV file of fly assignments (file confirming genes are assigned to drosophila melanogaster (default: "data/fly/FlyBase_Fields_2025_07_29.tsv.gz")')
     fly_args.add_argument('-filter_multigenes', dest='filter_multigenes', action='store_true', required=False,
-                        help='Filter out phenotype with "with" tag (default: DO NOT FILTER)')
+                        help='Filter out phenotypes involving multiple genes: rows with a "with" tag or "/" in '
+                             'the gene field are discarded. In simple mode (default) this is a broad string match; '
+                             'in smart mode (-fly_driver_filtering) only genuine second-gene disruptions are filtered.')
+    fly_args.add_argument('-fly_driver_filtering', dest='fly_driver_filtering', action='store_true', required=False,
+                        help='Enable smart driver-line filtering for fly phenotype parsing. '
+                             'Driver lines (GAL4, UAS, lexA, QUAS, etc.) are detected via regex and excluded '
+                             'from multi-gene counting, so "viable, with Scer\\GAL4[x]" is correctly kept as '
+                             'viable rather than discarded. Non-descript phenotypes are treated as viable. '
+                             'Default: OFF (uses simpler broad-match filtering).')
 
     worm_args = parser.add_argument_group('Worm specific parameters')
     worm_args.add_argument('-worm_phenotypes', dest='worm_phenotypes', required=False,
                         help='Provide TSV file of worm phenotypes (default: "data/worm/lethal_terms_traversed_2025-08-12.tsv.gz")')
     worm_args.add_argument('-worm_lethal_genes', dest='worm_lethal_genes', required=False,
                         help='Provide TSV file of specified lethal worm genes (provide "default" for default lethal genes: "data/worm/genes_direct_and_inferred_for_WBPhenotype_0000062_11-08-2025.txt.gz")')
+    worm_args.add_argument('-worm_evidence_codes', dest='worm_evidence_codes', nargs='+', required=False,
+                        help='Only retain worm phenotype annotations with these evidence codes '
+                             '(e.g. IMP RNAi). By default all evidence codes are accepted. '
+                             'Example: -worm_evidence_codes IMP IBA')
 
     mouse_args = parser.add_argument_group('Mouse specific parameters')
     mouse_args.add_argument('-mouse_phenotypes', dest='mouse_phenotypes', required=False,
@@ -448,7 +461,7 @@ def main():
 ### FLY
     if options.species.lower() == "fly":
         ## By default we do not use the fly lethal genes file
-        if options.fly_lethal_genes == None:
+        if options.fly_lethal_genes is None:
             pass
         elif options.fly_lethal_genes.lower() == "default":
             logger.info(f"Using default fly lethal genes file: {DEFAULT_FLY_LETHAL_GENES_FILE}")
@@ -471,7 +484,7 @@ def main():
 ### WORM
     elif options.species.lower() == "worm":
         ## By default we do not use the worm lethal genes file
-        if options.worm_lethal_genes == None:
+        if options.worm_lethal_genes is None:
             pass
         elif options.worm_lethal_genes.lower() == "default":
             logger.info(f"Using default worm lethal genes file: {DEFAULT_WORM_LETHAL_GENES_FILE}")
@@ -492,6 +505,10 @@ def main():
                 sys.exit(1)
             else:
                 logger.info(f"Worm phenotypes file: {options.worm_phenotypes}")
+        if options.worm_evidence_codes:
+            logger.info(f"Worm evidence code filter: {' '.join(options.worm_evidence_codes)}")
+        else:
+            logger.info("Worm evidence code filter: none (all evidence codes accepted)")
 
 ### MOUSE
     elif options.species.lower() == "mouse":
@@ -533,38 +550,34 @@ def main():
     else:
         os.makedirs(options.output_dir)
 
-    phenotype_files = [options.phenotype_file]
-    gene_association_files = [options.gene_association_file]
-    if len(phenotype_files) != 1 or len(gene_association_files) != 1:
-        logger.error(f"Error: Expected one phenotype/gene_association file.")
+    phenotype_file        = options.phenotype_file
+    gene_association_file = options.gene_association_file
+
+    species = options.species.lower()
+    if species == "yeast":
+        vi_inviable_genes = get_viable_inviable_yeast(options, phenotype_file)
+    elif species == "fly":
+        vi_inviable_genes = get_viable_inviable_fly(options, phenotype_file)
+    elif species == "fish":
+        vi_inviable_genes = get_viable_inviable_fish(options, phenotype_file)
+    elif species == "worm":
+        vi_inviable_genes = get_viable_inviable_worm(options, phenotype_file)
+    elif species == "mouse":
+        vi_inviable_genes = get_viable_inviable_mouse(options, phenotype_file)
+    else:
+        logger.error(f"Unknown species '{options.species}'. Supported: fly, yeast, fish, worm, mouse")
         sys.exit(1)
 
-    for file in phenotype_files:
-        if options.species.lower() == "yeast":
-            vi_inviable_genes = get_viable_inviable_yeast(options, file)
-        elif options.species.lower() == "fly":
-            vi_inviable_genes = get_viable_inviable_fly(options, file)
-        elif options.species.lower() == "fish":
-            vi_inviable_genes = get_viable_inviable_fish(options, file)
-        elif options.species.lower() == "worm":
-            vi_inviable_genes = get_viable_inviable_worm(options, file)
-        elif options.species.lower() == "mouse":
-            vi_inviable_genes = get_viable_inviable_mouse(options, file)
-        else:
-            logger.error(f"Unknown species '{options.species}'. Supported: fly, yeast, fish, worm, mouse")
-            sys.exit(1)
-
-    for file in gene_association_files:
-        if options.species.lower() == "yeast":
-            vi_inviable_genes = get_viability_go_data_yeast(file, vi_inviable_genes)
-        elif options.species.lower() == "fly":
-            vi_inviable_genes = get_viability_go_data_fly(options, file, vi_inviable_genes)
-        elif options.species.lower() == "fish":
-            vi_inviable_genes = get_viability_go_data_fish(file, vi_inviable_genes)
-        elif options.species.lower() == "worm":
-            vi_inviable_genes = get_viability_go_data_worm(file, vi_inviable_genes)
-        elif options.species.lower() == "mouse":
-            vi_inviable_genes = get_viability_go_data_mouse(file, vi_inviable_genes)
+    if species == "yeast":
+        vi_inviable_genes = get_viability_go_data_yeast(gene_association_file, vi_inviable_genes)
+    elif species == "fly":
+        vi_inviable_genes = get_viability_go_data_fly(options, gene_association_file, vi_inviable_genes)
+    elif species == "fish":
+        vi_inviable_genes = get_viability_go_data_fish(gene_association_file, vi_inviable_genes)
+    elif species == "worm":
+        vi_inviable_genes = get_viability_go_data_worm(gene_association_file, vi_inviable_genes)
+    elif species == "mouse":
+        vi_inviable_genes = get_viability_go_data_mouse(gene_association_file, vi_inviable_genes)
 
     gr, unique_go_terms, obsolete_go_terms = obo_to_graph(options.output_dir, options.go_obo_file)
 
@@ -589,13 +602,13 @@ def main():
     if options.gene_go_pheno:
         get_o_rep_output(vi_inviable_genes, Func, f"{options.output_dir}/{options.species}_OverRepresentation.tab")
 
-    # Always write the four FUNC-ready files (annotation, binary, study set, population)
+    # Always write the four go_enrichment files (binary, annotations, study set, population)
     write_func_output(vi_inviable_genes, options.output_dir, options.species)
 
     write_arff_output(vi_inviable_genes, go_terms, f"{options.output_dir}/{options.species}_PhenGO.arff")
 
     # Save run parameters
-    with open(options.output_dir + "/PhenGo_params.txt", "w") as outfile:
+    with open(os.path.join(options.output_dir, "PhenGO_params.txt"), "w") as outfile:
         outfile.write(f"Timestamp: {datetime.now().isoformat()}\n")
         for arg, value in vars(options).items():
             outfile.write(f"{arg}: {value}\n")

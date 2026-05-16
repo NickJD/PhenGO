@@ -1,3 +1,10 @@
+"""
+PhenGO Compare-ARFF — compare two ARFF files gene-by-gene.
+
+Usage
+-----
+    compare-arff -arff_a reference.arff -arff_b comparison.arff -o results.csv
+"""
 import os as _os, sys as _sys
 if __name__ == "__main__" and not __package__:
     import importlib.util as _ilu
@@ -23,12 +30,7 @@ import argparse
 import csv
 from collections import defaultdict
 import logging
-from ..constants import configure_logger
-
-try: # While calling this script through pipa
-    from ..constants import *
-except (ModuleNotFoundError, ImportError, NameError, TypeError) as error:
-    from constants import *
+from ..constants import configure_logger, PhenGO_VERSION
 
 
 
