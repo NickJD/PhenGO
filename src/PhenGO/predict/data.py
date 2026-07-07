@@ -2,11 +2,58 @@
 predict/data.py — ARFF loading and data preparation for PhenGO-Predict.
 """
 import logging
-import numpy as np
-import pandas as pd
-from sklearn.preprocessing import LabelEncoder
+import csv
 
 logger = logging.getLogger(__name__)
+
+PHENOTYPE_CLASSES = ["viable", "lethal"]
+
+
+class PhenotypeLabelEncoder:
+    """Encode phenotype labels with lethal as the positive class.
+
+    sklearn's LabelEncoder sorts labels alphabetically, which maps
+    ``lethal -> 0`` and ``viable -> 1``.  The prediction code treats class 1 as
+    the positive/essential class, so we keep the mapping explicit:
+    ``viable -> 0`` and ``lethal -> 1``.
+    """
+
+    classes_ = PHENOTYPE_CLASSES
+
+    _ALIASES = {
+        "viable": "viable",
+        "non-essential": "viable",
+        "nonessential": "viable",
+        "non_essential": "viable",
+        "lethal": "lethal",
+        "inviable": "lethal",
+        "essential": "lethal",
+    }
+
+    def fit(self, labels):
+        unknown = sorted({self._normalise(v) for v in labels} - set(self.classes_))
+        if unknown:
+            raise ValueError(
+                "Unsupported phenotype label(s): "
+                + ", ".join(unknown)
+                + ". Expected viable/lethal labels."
+            )
+        return self
+
+    def transform(self, labels):
+        mapping = {"viable": 0, "lethal": 1}
+        return [mapping[self._normalise(v)] for v in labels]
+
+    def fit_transform(self, labels):
+        self.fit(labels)
+        return self.transform(labels)
+
+    def inverse_transform(self, values):
+        return [self.classes_[int(v)] for v in values]
+
+    def _normalise(self, value):
+        label = str(value).strip().lower()
+        return self._ALIASES.get(label, label)
 
 
 def load_arff_data(filepath):
@@ -41,20 +88,7 @@ def load_arff_data(filepath):
                     in_data_section = True
                     continue
                 if in_data_section:
-                    values = []
-                    current_value = ""
-                    in_quotes = False
-                    for char in line:
-                        if char == '"' and not in_quotes:
-                            in_quotes = True
-                        elif char == '"' and in_quotes:
-                            in_quotes = False
-                        elif char == ',' and not in_quotes:
-                            values.append(current_value.strip().strip('"\''))
-                            current_value = ""
-                        else:
-                            current_value += char
-                    values.append(current_value.strip().strip('"\''))
+                    values = [v.strip().strip('"\'') for v in next(csv.reader([line]))]
                     if len(values) == len(attribute_names):
                         data_lines.append(values)
                     else:
@@ -71,6 +105,8 @@ def load_arff_data(filepath):
     if not data_lines:
         logger.error("No data found in ARFF file")
         return None, None
+
+    import pandas as pd
 
     df = pd.DataFrame(data_lines, columns=attribute_names)
 
@@ -105,11 +141,13 @@ def prepare_data(df):
     logger.debug(f"Sample phenotypes: {phenotype.head().tolist()}")
     logger.debug(f"Unique phenotypes: {phenotype.unique()}")
 
+    import numpy as np
+
     X = go_terms.astype(float).values
     X = np.nan_to_num(X, nan=0.0)
 
-    le = LabelEncoder()
-    y  = le.fit_transform(phenotype)
+    le = PhenotypeLabelEncoder()
+    y  = np.asarray(le.fit_transform(phenotype), dtype=int)
 
     logger.info(f"Features shape:    {X.shape}")
     logger.info(f"Number of GO terms:{X.shape[1]}")
@@ -123,4 +161,3 @@ def prepare_data(df):
     logger.debug(f"Unique feature values: {unique_vals}")
 
     return X, y, gene_names, le
-

@@ -265,11 +265,9 @@ def get_viability_go_data_mouse(gene_association_file, vi_inviable_genes):
                     continue
 
                 if row[0] == "MGI":
-                    # FIX: was row[1] which is the MGI accession ID (e.g. "MGI:97490").
-                    # The phenotype handler (get_viable_inviable_mouse) uses row[5] which is
-                    # the gene *symbol* (e.g. "Trp53"). GAF column 2 (row[2]) is the DB Object
-                    # Symbol — the gene name — and this is what matches the phenotype dict keys.
-                    gene = row[2]
+                    # Prefer MGI accession IDs because MGI phenotype reports expose
+                    # marker accessions more consistently than marker symbols.
+                    gene_candidates = [row[1], row[2]]
                     go = row[4]
 
                     #  Filter NOT qualifiers
@@ -277,12 +275,14 @@ def get_viability_go_data_mouse(gene_association_file, vi_inviable_genes):
                         not_filtered_count += 1
                         continue
 
-                    if gene in vi_inviable_genes:
-                        if isinstance(vi_inviable_genes[gene], tuple):
-                            vi_inviable_genes[gene][1].append(go)
-                        else:
-                            vi_inviable_genes[gene] = (vi_inviable_genes[gene], [go])
-                        go_assigned_count += 1
+                    for gene in gene_candidates:
+                        if gene in vi_inviable_genes:
+                            if isinstance(vi_inviable_genes[gene], tuple):
+                                vi_inviable_genes[gene][1].append(go)
+                            else:
+                                vi_inviable_genes[gene] = (vi_inviable_genes[gene], [go])
+                            go_assigned_count += 1
+                            break
                     processed_count += 1
 
     except Exception as e:

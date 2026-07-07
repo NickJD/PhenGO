@@ -26,6 +26,12 @@ To install the PhenGO package, you can use pip:
 ```bash
 pip install phengo
 ```
+For prediction models and report generation, install the optional extras:
+
+```bash
+pip install "phengo[predict,reports]"
+```
+Install `phengo[nn]` as well if you want the TensorFlow neural-network model.
 
 ## Usage
 ### PhenGO Package:
@@ -45,6 +51,7 @@ usage: PhenGO [-h] [--print-defaults]
               -gene_association_file GENE_ASSOCIATION_FILE
               -go_obo_file GO_OBO_FILE -output_dir OUTPUT_DIR
               [-no_filter_unused_gos] [-filter_mixed_terms] [-gene_go_pheno]
+              [-overwrite]
               [-fly_lethal_genes FLY_LETHAL_GENES]
               [-fly_assignments FLY_ASSIGNMENTS]
               [-filter_multigenes]
@@ -53,7 +60,7 @@ usage: PhenGO [-h] [--print-defaults]
               [-mouse_phenotypes MOUSE_PHENOTYPES]
               [-v]
 
-PhenGO v0.1.2 - Convert phenotype and GO data to ARFF format
+PhenGO v0.2.0 - Convert phenotype and GO data to ARFF format
 
 Required Options:
   -species SPECIES      Species tag (fly, yeast, fish, worm, mouse)
@@ -73,6 +80,7 @@ Optional parameters:
                         phenotypes (default: False)
   -gene_go_pheno        Deprecated — FUNC files are always written regardless.
                         Kept for backward compatibility.
+  -overwrite            Overwrite existing non-log contents in output_dir.
 
 Fly specific parameters:
   -fly_lethal_genes FLY_LETHAL_GENES
@@ -107,7 +115,7 @@ Misc:
 ```commandline
 usage: compare-arff [-h] -arff_a ARFF_A -arff_b ARFF_B -o OUTPUT
 
-PhenGO v0.1.2 - Compare-ARFF: Compare two ARFF files.
+PhenGO v0.2.0 - Compare-ARFF: Compare two ARFF files.
 
 options:
   -h, --help      show this help message and exit
@@ -126,3 +134,21 @@ GeneB,lethal,viable,,"LABEL_MISMATCH"
 GeneC,viable,viable,GO:0008150;GO:0003674,"GO_TERM_MISMATCH"
 GeneD,viable,viable,,"EXACT_MATCH"
 ```
+
+### Version-Sensitivity Analysis
+Use this command when comparing model-organism database years or releases for a
+research study:
+
+```commandline
+phengo-version-sensitivity \
+  -arff_files worm_2017_PhenGO.arff worm_2021_PhenGO.arff worm_2025_PhenGO.arff \
+  -dataset_names 2017 2021 2025 \
+  -models lr rf gb dt \
+  -output_dir worm_version_sensitivity
+```
+
+The command writes dataset drift tables, repeated within-year CV results,
+train-year/test-year transfer matrices, matched-gene and matched-feature panels,
+prediction-instability summaries, feature-rank overlap tables, and a Markdown
+analysis report. See `docs/version_sensitivity_workflow.md` for the recommended
+paper workflow.

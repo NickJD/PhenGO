@@ -117,7 +117,7 @@ def get_viable_inviable_worm(options, phenotype_file):
                         gene_name = row[2]
                         qualifier = row[3] if len(row) > 3 else ""
                         phenotype_terms = row[4]
-                        evidence_codes = row[6]
+                        evidence_codes = row[6] if len(row) > 6 else ""
 
                         # Match against lethal terms, exclude NOT qualifiers.
                         # Evidence code filtering is only applied when the user
@@ -433,8 +433,9 @@ def get_viable_inviable_mouse(options, phenotype_file):
         dict: {gene_name: "lethal" or "viable"}
 
     Notes:
-        - Column 3 contains phenotype terms, column 5 contains gene name
-        - Filters transgenes by excluding entries with commas in gene name
+        - Supports MGI_PhenoGenoMP and MGI_GenePheno-style tabular reports
+        - Uses MGI marker accession IDs where available to match GAF column 2
+        - Filters multi-marker/transgene rows by excluding entries with commas in gene accession
         - Matches phenotype terms against lethal term list
     """
     vi_inviable_genes = defaultdict(list)
@@ -451,23 +452,32 @@ def get_viable_inviable_mouse(options, phenotype_file):
 
         logger.info(f"Loaded {len(lethal_terms)} lethal phenotype terms")
 
+        def extract_mouse_gene_and_mp(row):
+            # MGI_GenePheno: allele composition, allele symbol, allele id,
+            # background, MP id, PubMed id, marker accession, marker symbol, ...
+            if len(row) > 6 and row[4].startswith("MP:"):
+                return row[6], row[4]
+            # MGI_PhenoGenoMP: allele composition, allele symbol, background,
+            # MP id, PubMed id, marker accession, genotype id
+            if len(row) > 5 and row[3].startswith("MP:"):
+                return row[5], row[3]
+            # Legacy/custom fallback used by earlier PhenGO versions.
+            if len(row) > 4:
+                return row[2], row[4]
+            return None, None
+
         with gzip.open(phenotype_file, 'rt', encoding='utf-8') as input_file:
             reader = csv.reader(input_file, delimiter='\t')
             for row in reader:
-                # Ensure there is at least a gene column
-                if len(row) <= 1:
+                gene_name, phenotype_term = extract_mouse_gene_and_mp(row)
+                if not gene_name or not phenotype_term:
                     continue
 
-                # if row[5].lower() != 'homozygote':
-                #     continue
+                if ',' in gene_name:
+                    filtered_count['transgenes'] += 1
+                    continue
 
-                gene_name = row[2]
-
-
-
-
-
-                if row[4] in lethal_terms:
+                if phenotype_term in lethal_terms:
                     vi_inviable_genes[gene_name].append("lethal")
                 else:
                     vi_inviable_genes[gene_name].append("viable")

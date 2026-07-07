@@ -17,7 +17,7 @@ PhenGO core
 
 PhenGO-Predict (Predict/ sub-dir or standalone)
   PhenGO_Predict.log              – model metrics
-  */final_report.txt              – per-model text report
+  */report.txt, */final_report.txt – per-model text report
   */roc_curve.png, */training_history.png, */feature_importance*.{png,csv}
 """
 import os as _os, sys as _sys
@@ -44,6 +44,7 @@ if __name__ == "__main__" and not __package__:
 import os
 import re
 import json
+import csv
 import base64
 import argparse
 import logging
@@ -150,7 +151,7 @@ def parse_arff_stats(path: str) -> dict:
     go_per_gene: list[int] = []
 
     for line in data_lines:
-        parts = [p.strip() for p in line.split(',')]
+        parts = [p.strip().strip('"\'') for p in next(csv.reader([line]))]
         if len(parts) < 3:
             continue
         label = parts[-1].lower()
@@ -511,7 +512,7 @@ def generate_report(input_dir: str, out_path: str) -> None:
         # Per-model final reports
         for root, dirs, files in os.walk(predict_dir):
             for fname in sorted(files):
-                if fname == 'final_report.txt':
+                if fname in {'report.txt', 'final_report.txt'}:
                     rp = os.path.join(root, fname)
                     model_name = os.path.basename(root)
                     content = parse_final_report(rp)
@@ -586,4 +587,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

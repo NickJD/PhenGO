@@ -5,7 +5,6 @@ import os
 import logging
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
 from sklearn.metrics import roc_curve, roc_auc_score
 
 logger = logging.getLogger(__name__)
@@ -77,7 +76,7 @@ def plot_training_history(options, history):
 def plot_feature_importance_with_errors(options, importance_df, top_n=30,
                                         title="Feature Importance"):
     """Three-panel bar chart: overall / lethal / viable importance with error bars."""
-    top_features = importance_df.nsmallest(top_n, "Overall_Importance")
+    top_features = importance_df.nlargest(top_n, "Overall_Importance")
 
     fig, axes = plt.subplots(1, 3, figsize=(20, 8))
 
@@ -95,8 +94,8 @@ def plot_feature_importance_with_errors(options, importance_df, top_n=30,
         ax.invert_yaxis()
         ax.grid(axis="x", alpha=0.3)
 
-    top_lethal = importance_df.nsmallest(top_n, "Lethal_Importance")
-    top_viable = importance_df.nsmallest(top_n, "Viable_Importance")
+    top_lethal = importance_df.nlargest(top_n, "Lethal_Importance")
+    top_viable = importance_df.nlargest(top_n, "Viable_Importance")
 
     _bar_panel(axes[0], top_features, "Overall_Importance", "Overall_Std",
                "steelblue", f"Top {top_n} - Overall")

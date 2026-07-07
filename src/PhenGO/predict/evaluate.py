@@ -9,12 +9,6 @@ from sklearn.metrics import f1_score, classification_report, confusion_matrix, r
 
 logger = logging.getLogger(__name__)
 
-try:
-    import tensorflow as tf
-except ImportError as e:
-    logger.error(f"TensorFlow import failed: {e}")
-    raise
-
 
 def compute_class_weights(y):
     """Compute balanced class weights to counteract class imbalance.
@@ -67,7 +61,7 @@ def evaluate_and_analyse_predictions(model, X_test, y_test, gene_names_test,
         X_test         : Feature matrix for test genes.
         y_test         : Integer labels for test genes.
         gene_names_test: Series/array of gene name strings.
-        label_encoder  : Fitted LabelEncoder used during prepare_data().
+        label_encoder  : Fitted phenotype encoder used during prepare_data().
         threshold      : Decision threshold (use find_optimal_threshold output).
 
     Returns:
@@ -107,6 +101,7 @@ def evaluate_and_analyse_predictions(model, X_test, y_test, gene_names_test,
         "Predicted_Label":          [label_encoder.classes_[i] for i in y_pred],
         "Predicted_Label_Numeric":  y_pred,
         "Prediction_Probability":   y_pred_proba.flatten(),
+        "probability_lethal":       y_pred_proba.flatten(),
         "Confidence":               np.abs(y_pred_proba.flatten() - 0.5),
         "Correct_Prediction":       y_test == y_pred,
     })

@@ -25,6 +25,7 @@ from sklearn.metrics import (
     roc_auc_score, classification_report, confusion_matrix,
     precision_score, recall_score, accuracy_score, roc_curve, f1_score,
 )
+from sklearn.utils.class_weight import compute_sample_weight
 
 import matplotlib
 matplotlib.use('Agg')
@@ -54,12 +55,13 @@ def build_sklearn_model(model_type, options):
     """
     max_depth    = getattr(options, 'max_depth',    None)
     n_estimators = getattr(options, 'n_estimators', 200)
+    random_state = getattr(options, 'random_state', getattr(options, 'seed', 42))
 
     if model_type == 'dt':
         return DecisionTreeClassifier(
             max_depth=max_depth,
             class_weight='balanced',
-            random_state=42,
+            random_state=random_state,
         )
     elif model_type == 'rf':
         return RandomForestClassifier(
@@ -67,27 +69,27 @@ def build_sklearn_model(model_type, options):
             max_depth=max_depth,
             class_weight='balanced',
             n_jobs=-1,
-            random_state=42,
+            random_state=random_state,
         )
     elif model_type == 'gb':
         return GradientBoostingClassifier(
             n_estimators=n_estimators,
             max_depth=max_depth or 5,
-            random_state=42,
+            random_state=random_state,
         )
     elif model_type == 'lr':
         return LogisticRegression(
             max_iter=2000,
             class_weight='balanced',
             n_jobs=-1,
-            random_state=42,
+            random_state=random_state,
         )
     elif model_type == 'svm':
         return SVC(
             kernel='rbf',
             class_weight='balanced',
             probability=True,   # required for predict_proba / AUC
-            random_state=42,
+            random_state=random_state,
         )
     else:
         raise ValueError(f"Unknown sklearn model type: '{model_type}'")
@@ -123,7 +125,15 @@ def train_evaluate_sklearn_model(
     logger.info('='*60)
 
     model = build_sklearn_model(model_type, options)
-    model.fit(X_train, y_train)
+    sample_weight = (
+        compute_sample_weight(class_weight='balanced', y=y_train)
+        if model_type == 'gb'
+        else None
+    )
+    if sample_weight is not None:
+        model.fit(X_train, y_train, sample_weight=sample_weight)
+    else:
+        model.fit(X_train, y_train)
     logger.info("  Training complete.")
 
     # ── Metrics ────────────────────────────────────────────────────────────
@@ -425,4 +435,3 @@ def write_model_comparison(results_list, output_dir):
     fig.savefig(os.path.join(output_dir, 'model_comparison_auc.png'), dpi=150)
     plt.close(fig)
     logger.info(f"  Comparison chart: model_comparison_auc.png")
-

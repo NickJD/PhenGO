@@ -1,4 +1,5 @@
 import argparse
+import csv
 import sys
 import shutil
 import os
@@ -37,24 +38,39 @@ from .go_handling import *
 def removed_unused_gos(vi_inviable_genes, unique_go_terms):
     # This optional function removes unused GO terms from the ARFF and go_enrichment outputs
     # It rebuilds the GO term list and each gene's bin_vec to only include used terms
-    # collect *all* GOs assigned to at least 1 gene
+    # collect *all* expanded GO features assigned to at least 1 gene
     used_gos = set()
+    go_term_index = {go: i for i, go in enumerate(unique_go_terms)}
     for gene_vals in vi_inviable_genes.values():
-        used_gos.update(gene_vals.get("go_list", []))
+        bin_vec = gene_vals.get("bin_vec", [])
+        if bin_vec:
+            used_gos.update(
+                go for go, idx in go_term_index.items()
+                if idx < len(bin_vec) and bin_vec[idx] == 1
+            )
+        else:
+            used_gos.update(gene_vals.get("expanded_go_list", gene_vals.get("go_list", [])))
     # restrict the master list to only the used terms, in order
     filtered_go_terms = [go for go in unique_go_terms if go in used_gos]
-    # now rebuild each gene's go_list AND its bin_vec *only* over filtered_go_terms
+    # now rebuild each gene's expanded_go_list AND its bin_vec *only* over filtered_go_terms
     filtered_genes = {}
     for gene_id, gene_vals in vi_inviable_genes.items():
-        old_go_list = gene_vals.get("go_list", [])
-        if not old_go_list:
+        old_bin_vec = gene_vals.get("bin_vec", [])
+        expanded_go_list = []
+        for go in filtered_go_terms:
+            old_idx = go_term_index[go]
+            if old_idx < len(old_bin_vec) and old_bin_vec[old_idx] == 1:
+                expanded_go_list.append(go)
+
+        if not expanded_go_list:
             continue
-        old_go_list = list(dict.fromkeys(old_go_list))
-        new_go_list = [go for go in filtered_go_terms if go in old_go_list]
-        new_bin_vec = [1 if go in new_go_list else 0 for go in filtered_go_terms]
+
+        direct_go_list = list(dict.fromkeys(gene_vals.get("go_list", [])))
+        new_bin_vec = [1 if go in expanded_go_list else 0 for go in filtered_go_terms]
         filtered_genes[gene_id] = {
             "status" : gene_vals["status"],
-            "go_list": new_go_list,
+            "go_list": direct_go_list,
+            "expanded_go_list": expanded_go_list,
             "bin_vec" : new_bin_vec
         }
     return filtered_genes, filtered_go_terms
@@ -207,8 +223,10 @@ def assign_go_to_vector(vi_inviable_genes, gr, unique_go_terms):
                 logger.warning(f"Could not get ancestors for {go_term} in gene {gene}: {e}")
                 continue
 
+        expanded_go_list = [go for go in unique_go_terms if go in all_ancestors]
+
         # Set binary vector and record overrepresentation output entries (one write per unique term)
-        for ancestor in all_ancestors:
+        for ancestor in expanded_go_list:
             idx = go_term_index.get(ancestor)
             if idx is not None:
                 bin_vec[idx] = 1
@@ -217,6 +235,7 @@ def assign_go_to_vector(vi_inviable_genes, gr, unique_go_terms):
                 logger.debug(f"Ancestor {ancestor} not in unique_go_terms list")
 
         vi_inviable_genes[gene]["bin_vec"] = bin_vec.copy()
+        vi_inviable_genes[gene]["expanded_go_list"] = expanded_go_list
         o_rep.append('\n')
         bin_vec = [0] * len(unique_go_terms)
 
@@ -228,36 +247,12 @@ def assign_go_to_vector(vi_inviable_genes, gr, unique_go_terms):
 def get_o_rep_output(vi_inviable_genes, o_rep, output_file):
     # Generate overrepresentation analysis output file
     new_o_rep = []
-    geneSeen = set()
-    tempySeen = set()
-    Counter = 0
 
     for gene, values in vi_inviable_genes.items():
-        if values['status'] in ['inviable', 'lethal']:  # Accept both for cross-species compatibility
-            for line in o_rep:
-                if line == "\n":
-                    continue
-                line_gene = line.split('\t')[0]
-                if line_gene == gene and line not in geneSeen:
-                    geneSeen.add(line)
-                    entry = line.strip() + "\t1"
-                    new_o_rep.append([entry])
-                if line_gene == gene and gene not in tempySeen:
-                    tempySeen.add(gene)
-                    Counter += 1
-
-        elif values['status'] == 'viable':
-            for line in o_rep:
-                if line == "\n":
-                    continue
-                line_gene = line.split('\t')[0]
-                if line_gene == gene and line not in geneSeen:
-                    geneSeen.add(line)
-                    entry = line.strip() + "\t0"
-                    new_o_rep.append([entry])
-                if line_gene == gene and gene not in tempySeen:
-                    tempySeen.add(gene)
-                    Counter += 1
+        label = "1" if values['status'] in ['inviable', 'lethal'] else "0"
+        go_terms = values.get("expanded_go_list") or values.get("go_list", [])
+        for go_term in dict.fromkeys(go_terms):
+            new_o_rep.append([f"{gene}\t{go_term}\t{label}"])
 
     with open(output_file, mode='w') as FUNCoutputfile:
         for element in new_o_rep:
@@ -297,7 +292,7 @@ def write_func_output(vi_inviable_genes, output_dir, species):
     seen_annot   = set()
 
     for gene, values in vi_inviable_genes.items():
-        go_list = values.get("go_list", [])
+        go_list = values.get("expanded_go_list") or values.get("go_list", [])
         if not go_list:
             continue
 
@@ -347,13 +342,12 @@ def write_arff_output(vi_inviable_genes, filtered_go_terms, output_file):
             f.write(f"@ATTRIBUTE {go_term} {{0,1}}\n")
         f.write("@ATTRIBUTE class {viable,lethal}\n\n")
         f.write("@DATA\n")
+        writer = csv.writer(f, lineterminator="\n")
         for gene, values in vi_inviable_genes.items():
-            gene = gene.replace("'", "-")  # Replace single quotes to keep ARFF valid
-            bin_vec = ",".join(map(str, values["bin_vec"]))
             status = values["status"]
             if status == 'inviable':
                 status = 'lethal'
-            f.write(f"{gene},{bin_vec},{status}\n")
+            writer.writerow([gene, *values["bin_vec"], status])
 
 
 def main():
@@ -405,6 +399,8 @@ def main():
                         help='(Deprecated — go_enrichment files are now always written. Kept for backward compatibility.)'
                              ' Previously output a single Gene-GO-Phenotype file; that file is now'
                              ' superseded by the four {species}_*.tab/txt files in go_enrichment/ generated every run.')
+    optional.add_argument('-overwrite', dest='overwrite', action='store_true', required=False,
+                        help='Overwrite existing non-log contents in output_dir (default: refuse to delete files).')
 
     fly_args = parser.add_argument_group('Fly specific parameters')
     fly_args.add_argument('-fly_lethal_genes', dest='fly_lethal_genes', required=False,
@@ -530,11 +526,14 @@ def main():
             if not (os.path.isfile(os.path.join(options.output_dir, e)) and e.endswith('.log'))
         ]
         if non_log_entries:
-            logger.warning(
+            message = (
                 f"Output directory '{options.output_dir}' already contains {len(non_log_entries)} "
-                f"file(s)/folder(s). They will be deleted before this run proceeds. "
-                f"Pass a new -output_dir to preserve them."
+                f"file(s)/folder(s). Pass -overwrite to delete them, or choose a new -output_dir."
             )
+            if not options.overwrite:
+                logger.error(message)
+                sys.exit(1)
+            logger.warning(message)
         for entry in os.listdir(options.output_dir):
             path = os.path.join(options.output_dir, entry)
             # Preserve .log files (including PhenGO.log)
@@ -618,9 +617,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
 
 
 

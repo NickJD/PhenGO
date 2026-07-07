@@ -66,19 +66,6 @@ from ..constants import configure_logger
 configure_logger("PhenGO.predict", enable_file=False)
 logger = logging.getLogger("PhenGO.predict")
 
-from .data      import load_arff_data, prepare_data
-from .evaluate  import compute_class_weights, find_optimal_threshold, evaluate_and_analyse_predictions
-from .visualise import plot_training_history, plot_roc_curve
-from .importance import analyse_feature_importance
-from .compare   import compare_datasets
-from .sklearn_models import (
-    train_evaluate_sklearn_model, write_model_comparison, MODEL_LABELS,
-)
-
-from sklearn.model_selection import train_test_split
-import numpy as np
-from sklearn.metrics import confusion_matrix, classification_report, f1_score
-
 # All supported model type tokens
 _ALL_SKLEARN = ['dt', 'rf', 'gb', 'lr', 'svm']
 _ALL_MODELS  = ['nn'] + _ALL_SKLEARN
@@ -107,6 +94,10 @@ def _run_nn(options, X_train, X_test, y_train, y_test,
         return None
 
     from .model import create_model_sparse_optimised
+    from .evaluate import compute_class_weights, find_optimal_threshold, evaluate_and_analyse_predictions
+    from .visualise import plot_training_history, plot_roc_curve
+    from .importance import analyse_feature_importance
+    from sklearn.metrics import confusion_matrix, classification_report, f1_score
 
     nn_dir = os.path.join(output_dir, 'nn')
     os.makedirs(nn_dir, exist_ok=True)
@@ -171,7 +162,7 @@ def _run_nn(options, X_train, X_test, y_train, y_test,
     model.save(os.path.join(nn_dir, "gene_essentiality_model.keras"))
     predictions_df.to_csv(os.path.join(nn_dir, "predictions.csv"), index=False)
 
-    y_pred_bin = (y_pred_proba_test > opt_threshold).astype(int).flatten()
+    y_pred_bin = (y_pred_proba_test >= opt_threshold).astype(int).flatten()
     f1_macro = f1_score(y_test, y_pred_bin, average='macro', zero_division=0)
     cls_rep  = classification_report(y_test, y_pred_bin,
                                      target_names=label_encoder.classes_,
@@ -215,6 +206,7 @@ def _run_nn(options, X_train, X_test, y_train, y_test,
 
 def main():
     parser = argparse.ArgumentParser(
+        prog="PhenGO-predict",
         description="PhenGO-Predict — ML gene essentiality prediction platform",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
@@ -257,7 +249,9 @@ def main():
     parser.add_argument("-perm_repeats", type=int,   default=5,
                         help="Permutation repeats for feature importance")
     parser.add_argument("-output_dir",   required=True,
-                        help="Output directory (existing non-log contents deleted)")
+                        help="Output directory")
+    parser.add_argument("-overwrite", action="store_true",
+                        help="Overwrite an existing non-empty output directory")
 
     options = parser.parse_args()
 
@@ -268,9 +262,14 @@ def main():
                 f"Unknown model '{m}'. Valid choices: {', '.join(model_choices)}")
     models_to_run = _resolve_models(options.model)
 
-    if os.path.exists(options.output_dir):
+    if os.path.exists(options.output_dir) and os.listdir(options.output_dir):
+        if not options.overwrite:
+            parser.error(
+                f"Output directory '{options.output_dir}' is not empty. "
+                "Choose a new directory or pass -overwrite."
+            )
         shutil.rmtree(options.output_dir)
-    os.makedirs(options.output_dir)
+    os.makedirs(options.output_dir, exist_ok=True)
 
     configure_logger("PhenGO.predict",
                      enable_file=True,
@@ -291,12 +290,18 @@ def main():
         logger.info("RUNNING IN COMPARISON MODE")
         logger.info(f"Datasets: {', '.join(options.dataset_names)}")
         logger.info("=" * 80)
+        from .compare import compare_datasets
         compare_datasets(options, options.arff_files, options.dataset_names)
         logger.info("COMPARISON ANALYSIS COMPLETE")
         logger.info(f"Results saved to: {options.output_dir}")
 
     # ── Single dataset mode ───────────────────────────────────────────────
     elif options.arff_file:
+        from .data import load_arff_data, prepare_data
+        from .sklearn_models import train_evaluate_sklearn_model, write_model_comparison
+        from sklearn.model_selection import train_test_split
+        import numpy as np
+
         logger.info("=" * 80)
         logger.info("RUNNING IN SINGLE DATASET MODE")
         logger.info(f"Models: {', '.join(models_to_run)}")

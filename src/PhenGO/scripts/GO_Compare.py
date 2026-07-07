@@ -56,7 +56,7 @@ def parse_arff_with_terms(file_path):
             elif line.lower() == '@data':
                 data_started = True
             elif data_started:
-                parts = [p.strip() for p in line.split(',')]
+                parts = [p.strip().strip('"\'') for p in next(csv.reader([line]))]
                 if len(parts) < 3:  # Skip malformed lines
                     continue
                 gene = parts[0]

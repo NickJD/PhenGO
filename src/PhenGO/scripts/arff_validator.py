@@ -27,6 +27,7 @@ if __name__ == "__main__" and not __package__:
 import os
 import argparse
 import json
+import csv
 from collections import Counter
 import logging
 from ..constants import configure_logger
@@ -59,20 +60,7 @@ def parse_arff(path):
                 in_data = True
                 continue
             if in_data:
-                # parse CSV-like respecting quoted strings
-                vals = []
-                cur = ''
-                in_q = False
-                for ch in line:
-                    if ch == '"':
-                        in_q = not in_q
-                        cur += ch
-                    elif ch == ',' and not in_q:
-                        vals.append(cur.strip().strip('"'))
-                        cur = ''
-                    else:
-                        cur += ch
-                vals.append(cur.strip().strip('"'))
+                vals = [v.strip().strip('"\'') for v in next(csv.reader([line]))]
                 data_lines.append(vals)
     return attr_names, attr_types, data_lines
 
@@ -149,6 +137,10 @@ def main():
                      logfile_name='arff_validator.log')
     logger = logging.getLogger('PhenGO.arff_validator')
 
+    if not os.path.exists(args.input):
+        logger.error(f"Input ARFF file not found: {args.input}")
+        raise SystemExit(2)
+
     summary = validate(args.input)
     out_json = os.path.join(args.output_dir, 'arff_summary.json')
     with open(out_json, 'w', encoding='utf-8') as fh:
@@ -168,4 +160,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

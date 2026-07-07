@@ -51,7 +51,7 @@ def parse_arff_with_terms(file_path):
             elif line.lower() == '@data':
                 data_started = True
             elif data_started:
-                parts = [p.strip() for p in line.split(',')]
+                parts = [p.strip().strip('"\'') for p in next(csv.reader([line]))]
                 gene = parts[0]
                 label = parts[-1]
                 values = parts[1:-1]
