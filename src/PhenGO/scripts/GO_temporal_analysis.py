@@ -8,7 +8,7 @@ This script analyzes multiple ARFF files across time points to track:
 3. GO term ranking stability and trends
 4. Feature-set evolution (GO term churn, Jaccard similarity, cumulative growth)
 5. Gene lifecycle (first/last appearance, classification consistency)
-6. GO term lifecycle (entry/exit year, enrichment trajectory)
+6. GO term lifecycle (entry/exit available snapshot, enrichment trajectory)
 7. Pairwise dataset similarity matrix (gene sets and GO feature sets)
 8. Data sparsity over time (GO terms per gene distribution)
 9. GO term granularity / tree depth over time
@@ -18,7 +18,8 @@ Input modes:
                 ARFF files; subdirectory name is used as the timepoint label).
   -arff_files : Explicit list of ARFF files (requires matching -timepoints list).
 """
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 if __name__ == "__main__" and not __package__:
     import importlib.util as _ilu
     _here   = _os.path.dirname(_os.path.abspath(__file__))
@@ -47,10 +48,47 @@ from collections import defaultdict, Counter, deque
 import statistics
 import logging
 import os
+import re
+import sys
+from datetime import datetime, timezone
 
 from ..constants import configure_logger, PhenGO_VERSION
+from ..predict.data import load_arff_data
+from ..provenance import (
+    dependency_versions,
+    git_commit,
+    git_status,
+    prepare_output_dir,
+    sha256_file,
+    source_tree_sha256,
+)
+from ..predict.version_sensitivity import (
+    load_version_dataset,
+    validate_dataset_manifests,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _natural_key(value):
+    return [
+        int(part) if part.isdigit() else part.lower()
+        for part in re.split(r"(\d+)", str(value))
+    ]
+
+
+def _calendar_year(value):
+    match = re.search(r"(?:19|20)\d{2}", str(value or ""))
+    return int(match.group(0)) if match else None
+
+
+def _validate_snapshot_manifests(arff_entries, allow_missing=False):
+    datasets = [
+        load_version_dataset(arff_path, timepoint)
+        for timepoint, arff_path, _ in arff_entries
+    ]
+    validate_dataset_manifests(datasets, allow_missing)
+    return [dataset.manifest for dataset in datasets]
 
 
 # ── Input discovery ───────────────────────────────────────────────────────────
@@ -72,7 +110,7 @@ def discover_datasets_from_dir(parent_dir):
     """
     results = []
     parent_dir = os.path.abspath(parent_dir)
-    for entry in sorted(os.listdir(parent_dir)):
+    for entry in sorted(os.listdir(parent_dir), key=_natural_key):
         subdir = os.path.join(parent_dir, entry)
         if not os.path.isdir(subdir):
             continue
@@ -126,43 +164,46 @@ def load_go_depths(json_path):
 
 def parse_arff_with_terms(file_path):
     """Parse ARFF file and extract genes with their GO term features."""
-    data_started = False
+    df, _ = load_arff_data(file_path)
+    if df is None:
+        raise ValueError(f"Could not load ARFF file: {file_path}")
+    if df.shape[1] < 3:
+        raise ValueError(f"ARFF has no usable GO features: {file_path}")
+    gene_column = df.columns[0]
+    if df[gene_column].astype(str).duplicated().any():
+        duplicate_ids = set(df.loc[
+            df[gene_column].astype(str).duplicated(False), gene_column,
+        ].astype(str))
+        for gene in duplicate_ids:
+            rows = df[df[gene_column].astype(str) == gene]
+            if not rows.eq(rows.iloc[0]).all().all():
+                raise ValueError(f"Conflicting duplicate rows for gene {gene}")
+        df = df.drop_duplicates(subset=[gene_column], keep="first")
+    terms = list(df.columns[1:-1])
     genes = {}
-    attributes = []
+    for _, row in df.iterrows():
+        genes[str(row.iloc[0])] = {
+            'label': str(row.iloc[-1]),
+            'features': {term: row[term] for term in terms},
+        }
+    return genes, terms
 
-    with open(file_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('%'):
-                continue
-            if line.lower().startswith('@attribute'):
-                parts = line.split()
-                attr_name = parts[1].strip("'\"")
-                attributes.append(attr_name)
-            elif line.lower() == '@data':
-                data_started = True
-            elif data_started:
-                parts = [p.strip().strip('"\'') for p in next(csv.reader([line]))]
-                if len(parts) < 3:
-                    continue
-                gene = parts[0]
-                label = parts[-1]
-                values = parts[1:-1]
 
-                feature_dict = {}
-                for i, term in enumerate(attributes[1:-1]):
-                    if i < len(values):
-                        feature_dict[term] = values[i]
-                    else:
-                        feature_dict[term] = 'NA'
-
-                genes[gene] = {'label': label, 'features': feature_dict}
-
-    return genes, attributes[1:-1]
+def _benjamini_hochberg(p_values):
+    values = list(map(float, p_values))
+    order = sorted(range(len(values)), key=values.__getitem__)
+    adjusted = [1.0] * len(values)
+    running = 1.0
+    for reverse_rank, index in enumerate(reversed(order), 1):
+        rank = len(values) - reverse_rank + 1
+        running = min(running, values[index] * len(values) / rank)
+        adjusted[index] = min(1.0, running)
+    return adjusted
 
 
 def calculate_enrichment_stats(genes, go_terms):
     """Calculate GO term enrichment statistics."""
+    from scipy.stats import fisher_exact
     lethal_genes = {g: info for g, info in genes.items()
                     if info['label'].lower() in ['lethal', 'essential']}
     viable_genes = {g: info for g, info in genes.items()
@@ -191,22 +232,18 @@ def calculate_enrichment_stats(genes, go_terms):
         lethal_freq = lethal_count / total_lethal if total_lethal > 0 else 0
         viable_freq = viable_count / total_viable if total_viable > 0 else 0
 
-        # Enrichment ratio (lethal vs viable)
-        enrichment_ratio = lethal_freq / viable_freq if viable_freq > 0 else float('inf') if lethal_freq > 0 else 0
+        # Haldane-Anscombe correction avoids infinite ratios while retaining
+        # terms observed in only one class.
+        lethal_freq_adjusted = (lethal_count + 0.5) / (total_lethal + 1)
+        viable_freq_adjusted = (viable_count + 0.5) / (total_viable + 1)
+        enrichment_ratio = lethal_freq_adjusted / viable_freq_adjusted
+        depletion_ratio = viable_freq_adjusted / lethal_freq_adjusted
 
-        # Depletion ratio (viable vs lethal) - inverse
-        depletion_ratio = viable_freq / lethal_freq if lethal_freq > 0 else float('inf') if viable_freq > 0 else 0
-
-        # Fisher's exact test approximation
         a = lethal_count
         b = total_lethal - lethal_count
         c = viable_count
         d = total_viable - viable_count
-
-        if b > 0 and c > 0 and d > 0:
-            odds_ratio = (a * d) / (b * c)
-        else:
-            odds_ratio = float('inf') if a > 0 and (c == 0 or b == 0) else 0
+        odds_ratio, p_value = fisher_exact([[a, b], [c, d]], alternative='two-sided')
 
         enrichment_stats[go_term] = {
             'lethal_count': lethal_count,
@@ -216,14 +253,39 @@ def calculate_enrichment_stats(genes, go_terms):
             'enrichment_ratio': enrichment_ratio,
             'depletion_ratio': depletion_ratio,
             'odds_ratio': odds_ratio,
+            'p_value': p_value,
             'total_genes_with_term': lethal_count + viable_count
         }
+
+    fdr_values = _benjamini_hochberg([
+        enrichment_stats[term]['p_value'] for term in go_terms
+    ])
+    for term, fdr in zip(go_terms, fdr_values):
+        enrichment_stats[term]['fdr'] = fdr
 
     return enrichment_stats, {
         'total_genes': len(genes),
         'lethal_genes': total_lethal,
         'viable_genes': total_viable
     }
+
+
+def write_enrichment_statistics(output_prefix, datasets_dict):
+    """Write all effect sizes and multiple-testing results, not only top terms."""
+    rows = []
+    for timepoint, (_, (statistics_by_term, _)) in sorted(
+        datasets_dict.items(), key=lambda item: _natural_key(item[0])
+    ):
+        for term, values in statistics_by_term.items():
+            rows.append({'timepoint': timepoint, 'GO_Term': term, **values})
+    if not rows:
+        return
+    output_file = f"{output_prefix}_enrichment_statistics.csv"
+    with open(output_file, 'w', newline='', encoding='utf-8') as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    logger.info("GO enrichment statistics written to: %s", output_file)
 
 
 def track_gene_classifications(datasets_dict):
@@ -237,7 +299,9 @@ def track_gene_classifications(datasets_dict):
     gene_timeline = {}
     for gene in all_genes:
         timeline = {}
-        for timepoint, (genes_dict, _) in sorted(datasets_dict.items()):
+        for timepoint, (genes_dict, _) in sorted(
+            datasets_dict.items(), key=lambda item: _natural_key(item[0])
+        ):
             if gene in genes_dict:
                 timeline[timepoint] = genes_dict[gene]['label'].lower()
             else:
@@ -262,12 +326,11 @@ def track_gene_classifications(datasets_dict):
     return gene_timeline, changing_genes, stable_genes
 
 
-def get_top_enriched_terms(enrichment_stats, n=20, metric='enrichment_ratio'):
+def get_top_enriched_terms(enrichment_stats, n=20, metric='enrichment_ratio', max_fdr=0.05):
     """Get top N GO terms by enrichment metric."""
-    # Filter out infinite values for ranking
     filtered_terms = {
         term: stats for term, stats in enrichment_stats.items()
-        if stats[metric] != float('inf') and stats[metric] > 0
+        if stats[metric] > 0 and stats.get('fdr', 1.0) <= max_fdr
     }
 
     sorted_terms = sorted(
@@ -279,14 +342,14 @@ def get_top_enriched_terms(enrichment_stats, n=20, metric='enrichment_ratio'):
     return sorted_terms[:n]
 
 
-def write_temporal_top_terms(output_prefix, datasets_dict, top_n=20):
+def write_temporal_top_terms(output_prefix, datasets_dict, top_n=20, max_fdr=0.05):
     """Write top GO terms over time for lethal and viable enrichment."""
 
     # Lethal-enriched terms over time
     lethal_file = f"{output_prefix}_lethal_enriched_timeline.csv"
     with open(lethal_file, 'w', newline='') as f:
         # Get all timepoints
-        timepoints = sorted(datasets_dict.keys())
+        timepoints = sorted(datasets_dict.keys(), key=_natural_key)
 
         # Build header
         header = ['Rank', 'GO_Term']
@@ -300,8 +363,12 @@ def write_temporal_top_terms(output_prefix, datasets_dict, top_n=20):
         all_top_terms = set()
         timepoint_rankings = {}
 
-        for tp, (_, (enrichment_stats, _)) in sorted(datasets_dict.items()):
-            top_terms = get_top_enriched_terms(enrichment_stats, top_n, 'enrichment_ratio')
+        for tp, (_, (enrichment_stats, _)) in sorted(
+            datasets_dict.items(), key=lambda item: _natural_key(item[0])
+        ):
+            top_terms = get_top_enriched_terms(
+                enrichment_stats, top_n, 'enrichment_ratio', max_fdr,
+            )
             timepoint_rankings[tp] = {term: (rank + 1, stats)
                                       for rank, (term, stats) in enumerate(top_terms)}
             all_top_terms.update([term for term, _ in top_terms])
@@ -336,8 +403,12 @@ def write_temporal_top_terms(output_prefix, datasets_dict, top_n=20):
         all_top_terms = set()
         timepoint_rankings = {}
 
-        for tp, (_, (enrichment_stats, _)) in sorted(datasets_dict.items()):
-            top_terms = get_top_enriched_terms(enrichment_stats, top_n, 'depletion_ratio')
+        for tp, (_, (enrichment_stats, _)) in sorted(
+            datasets_dict.items(), key=lambda item: _natural_key(item[0])
+        ):
+            top_terms = get_top_enriched_terms(
+                enrichment_stats, top_n, 'depletion_ratio', max_fdr,
+            )
             timepoint_rankings[tp] = {term: (rank + 1, stats)
                                       for rank, (term, stats) in enumerate(top_terms)}
             all_top_terms.update([term for term, _ in top_terms])
@@ -359,25 +430,31 @@ def write_temporal_top_terms(output_prefix, datasets_dict, top_n=20):
     logger.info(f"Viable-enriched GO terms timeline written to: {viable_file}")
 
 
-def write_rank_stability(output_prefix, datasets_dict, top_n=20):
+def write_rank_stability(output_prefix, datasets_dict, top_n=20, max_fdr=0.05):
     """Analyze and write GO term rank stability over time."""
     output_file = f"{output_prefix}_rank_stability.csv"
 
-    timepoints = sorted(datasets_dict.keys())
+    timepoints = sorted(datasets_dict.keys(), key=_natural_key)
 
     # Track rankings for each term over time
     term_rankings = defaultdict(dict)
 
-    for tp, (_, (enrichment_stats, _)) in sorted(datasets_dict.items()):
+    for tp, (_, (enrichment_stats, _)) in sorted(
+        datasets_dict.items(), key=lambda item: _natural_key(item[0])
+    ):
         # Lethal enrichment rankings
-        top_lethal = get_top_enriched_terms(enrichment_stats, top_n, 'enrichment_ratio')
+        top_lethal = get_top_enriched_terms(
+            enrichment_stats, top_n, 'enrichment_ratio', max_fdr,
+        )
         for rank, (term, stats) in enumerate(top_lethal, 1):
             if term not in term_rankings:
                 term_rankings[term] = {'type': 'lethal_enriched', 'rankings': {}}
             term_rankings[term]['rankings'][tp] = rank
 
         # Viable enrichment rankings
-        top_viable = get_top_enriched_terms(enrichment_stats, top_n, 'depletion_ratio')
+        top_viable = get_top_enriched_terms(
+            enrichment_stats, top_n, 'depletion_ratio', max_fdr,
+        )
         for rank, (term, stats) in enumerate(top_viable, 1):
             if term not in term_rankings:
                 term_rankings[term] = {'type': 'viable_enriched', 'rankings': {}}
@@ -421,7 +498,9 @@ def write_gene_classification_changes(output_prefix, gene_timeline, changing_gen
     """Write analysis of genes that changed classification."""
     output_file = f"{output_prefix}_gene_classification_changes.csv"
 
-    timepoints = sorted(list(gene_timeline[list(gene_timeline.keys())[0]].keys()))
+    timepoints = sorted(
+        gene_timeline[next(iter(gene_timeline))].keys(), key=_natural_key
+    )
 
     with open(output_file, 'w', newline='') as f:
         fieldnames = ['Gene', 'Change_Pattern', 'Num_Changes', 'First_Class', 'Last_Class'] + \
@@ -484,7 +563,9 @@ def write_summary_statistics_timeline(output_prefix, datasets_dict, depths_map=N
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
 
-        for timepoint, (genes_dict, (enrichment_stats, summary)) in sorted(datasets_dict.items()):
+        for timepoint, (genes_dict, (enrichment_stats, summary)) in sorted(
+            datasets_dict.items(), key=lambda item: _natural_key(item[0])
+        ):
             total_genes = summary['total_genes']
             lethal_genes = summary['lethal_genes']
             viable_genes = summary['viable_genes']
@@ -600,15 +681,16 @@ def write_classification_stability_summary(output_prefix, gene_timeline, changin
 def analyse_feature_set_evolution(output_prefix, datasets_dict):
     """Track GO feature-set growth, churn, and similarity across timepoints.
 
-    For each consecutive pair of timepoints reports:
+    For each adjacent pair of available timepoints reports:
       - Total GO terms present (at least once in any gene)
       - New terms (in B not A), Lost terms (in A not B), Retained
-      - Jaccard similarity with the previous year
+      - Jaccard similarity with the previous available snapshot
+      - Calendar interval and whether the snapshots are consecutive years
       - Cumulative unique GO terms seen up to this point
 
     Output: {prefix}_feature_set_evolution.csv
     """
-    timepoints = sorted(datasets_dict.keys())
+    timepoints = sorted(datasets_dict.keys(), key=_natural_key)
 
     # For each timepoint collect the set of *active* GO terms
     # (terms that are actually present in at least one gene)
@@ -616,7 +698,9 @@ def analyse_feature_set_evolution(output_prefix, datasets_dict):
         return {t for t, s in enrichment_stats.items() if s['total_genes_with_term'] > 0}
 
     tp_go_sets = {}
-    for tp, (_, (enrichment_stats, _)) in sorted(datasets_dict.items()):
+    for tp, (_, (enrichment_stats, _)) in sorted(
+        datasets_dict.items(), key=lambda item: _natural_key(item[0])
+    ):
         tp_go_sets[tp] = active_go_terms(enrichment_stats)
 
     cumulative = set()
@@ -633,14 +717,24 @@ def analyse_feature_set_evolution(output_prefix, datasets_dict):
 
         union = current | prev
         jaccard = len(retained_terms) / len(union) if union and i > 0 else float('nan')
+        previous_tp = timepoints[i - 1] if i > 0 else ''
+        previous_year = _calendar_year(previous_tp)
+        current_year = _calendar_year(tp)
+        gap = (
+            current_year - previous_year
+            if previous_year is not None and current_year is not None else None
+        )
 
         rows.append({
             'Timepoint':               tp,
+            'Previous_Available_Timepoint': previous_tp or 'NA',
+            'Calendar_Gap_Years':       gap if gap is not None else 'NA',
+            'Consecutive_Calendar_Years': gap == 1 if gap is not None else 'NA',
             'Total_GO_Terms':          len(current),
             'New_Terms':               len(new_terms),
             'Lost_Terms':              len(lost_terms),
             'Retained_Terms':          len(retained_terms),
-            'Jaccard_Previous':        f"{jaccard:.4f}" if i > 0 else 'NA',
+            'Jaccard_Previous_Available': f"{jaccard:.4f}" if i > 0 else 'NA',
             'Cumulative_Unique_Terms': len(cumulative),
         })
 
@@ -657,14 +751,14 @@ def analyse_gene_lifecycle(output_prefix, datasets_dict):
     """Per-gene appearance, disappearance, and classification consistency.
 
     For every gene seen across all timepoints reports:
-      - First and last year present
-      - Number of years present / absent
+      - First and last available timepoint present
+      - Number of snapshots present / absent
       - Classification at each timepoint ('lethal', 'viable', 'absent')
       - Whether the gene ever changed classification
 
     Output: {prefix}_gene_lifecycle.csv
     """
-    timepoints = sorted(datasets_dict.keys())
+    timepoints = sorted(datasets_dict.keys(), key=_natural_key)
 
     all_genes = set()
     for genes_dict, _ in datasets_dict.values():
@@ -673,7 +767,9 @@ def analyse_gene_lifecycle(output_prefix, datasets_dict):
     rows = []
     for gene in sorted(all_genes):
         timeline = {}
-        for tp, (genes_dict, _) in sorted(datasets_dict.items()):
+        for tp, (genes_dict, _) in sorted(
+            datasets_dict.items(), key=lambda item: _natural_key(item[0])
+        ):
             timeline[tp] = genes_dict[gene]['label'].lower() if gene in genes_dict else 'absent'
 
         present_tps = [tp for tp, cls in timeline.items() if cls != 'absent']
@@ -682,10 +778,10 @@ def analyse_gene_lifecycle(output_prefix, datasets_dict):
 
         row = {
             'Gene':                gene,
-            'First_Year':          min(present_tps) if present_tps else 'NA',
-            'Last_Year':           max(present_tps) if present_tps else 'NA',
-            'Years_Present':       len(present_tps),
-            'Years_Absent':        len(timepoints) - len(present_tps),
+            'First_Available_Timepoint': present_tps[0] if present_tps else 'NA',
+            'Last_Available_Timepoint': present_tps[-1] if present_tps else 'NA',
+            'Snapshots_Present':   len(present_tps),
+            'Snapshots_Absent':    len(timepoints) - len(present_tps),
             'Classification_Summary': (
                 'consistent_lethal'  if unique_classes == {'lethal'}  else
                 'consistent_viable'  if unique_classes == {'viable'}  else
@@ -715,7 +811,7 @@ def analyse_gene_lifecycle(output_prefix, datasets_dict):
     n_consistent_lethal = sum(1 for r in rows if r['Classification_Summary'] == 'consistent_lethal')
     n_consistent_viable = sum(1 for r in rows if r['Classification_Summary'] == 'consistent_viable')
     n_mixed             = sum(1 for r in rows if r['Classification_Summary'] == 'mixed')
-    n_all_timepoints    = sum(1 for r in rows if r['Years_Present'] == len(timepoints))
+    n_all_timepoints    = sum(1 for r in rows if r['Snapshots_Present'] == len(timepoints))
 
     logger.info(f"Gene lifecycle written to: {output_file}")
     logger.info(f"  Consistently lethal:  {n_consistent_lethal}")
@@ -728,18 +824,20 @@ def analyse_go_term_lifecycle(output_prefix, datasets_dict):
     """Per-GO-term appearance trajectory and enrichment trend.
 
     For every GO term seen in any timepoint reports:
-      - First and last year present (active in ≥1 gene)
-      - Number of years present
-      - Mean and trend of lethal enrichment ratio across years
+      - First and last available timepoint present (active in at least one gene)
+      - Number of snapshots present
+      - Mean enrichment and trend per calendar year where dated
       - Mean lethal frequency and viable frequency
 
     Output: {prefix}_go_term_lifecycle.csv
     """
-    timepoints = sorted(datasets_dict.keys())
+    timepoints = sorted(datasets_dict.keys(), key=_natural_key)
 
     all_terms = set()
     tp_stats = {}
-    for tp, (_, (enrichment_stats, _)) in sorted(datasets_dict.items()):
+    for tp, (_, (enrichment_stats, _)) in sorted(
+        datasets_dict.items(), key=lambda item: _natural_key(item[0])
+    ):
         tp_stats[tp] = enrichment_stats
         all_terms.update(enrichment_stats.keys())
 
@@ -748,32 +846,40 @@ def analyse_go_term_lifecycle(output_prefix, datasets_dict):
         present_tps = [tp for tp in timepoints
                        if tp_stats[tp].get(term, {}).get('total_genes_with_term', 0) > 0]
 
-        enrichment_vals = [
-            tp_stats[tp][term]['enrichment_ratio']
+        enrichment_pairs = [
+            (_calendar_year(tp), tp_stats[tp][term]['enrichment_ratio'])
             for tp in present_tps
             if tp_stats[tp].get(term) and tp_stats[tp][term]['enrichment_ratio'] != float('inf')
         ]
+        enrichment_vals = [value for _, value in enrichment_pairs]
         lethal_freqs = [tp_stats[tp][term]['lethal_freq'] for tp in present_tps if tp_stats[tp].get(term)]
         viable_freqs = [tp_stats[tp][term]['viable_freq'] for tp in present_tps if tp_stats[tp].get(term)]
 
         def _mean(lst): return statistics.mean(lst) if lst else float('nan')
 
-        # Simple linear trend: positive = enrichment increasing over time
+        # Positive values indicate increasing enrichment per calendar year.
         trend = float('nan')
-        if len(enrichment_vals) >= 2:
-            n = len(enrichment_vals)
-            x_mean = (n - 1) / 2.0
-            num = sum((i - x_mean) * (v - _mean(enrichment_vals)) for i, v in enumerate(enrichment_vals))
-            den = sum((i - x_mean) ** 2 for i in range(n))
+        values_by_year = defaultdict(list)
+        for year, value in enrichment_pairs:
+            if year is not None:
+                values_by_year[year].append(value)
+        dated = sorted(
+            (year, _mean(values)) for year, values in values_by_year.items()
+        )
+        if len(dated) >= 2:
+            x_mean = _mean([year for year, _ in dated])
+            y_mean = _mean([value for _, value in dated])
+            num = sum((year - x_mean) * (value - y_mean) for year, value in dated)
+            den = sum((year - x_mean) ** 2 for year, _ in dated)
             trend = num / den if den else float('nan')
 
         row = {
             'GO_Term':             term,
-            'First_Year':          min(present_tps) if present_tps else 'NA',
-            'Last_Year':           max(present_tps) if present_tps else 'NA',
-            'Years_Present':       len(present_tps),
+            'First_Available_Timepoint': present_tps[0] if present_tps else 'NA',
+            'Last_Available_Timepoint': present_tps[-1] if present_tps else 'NA',
+            'Snapshots_Present':   len(present_tps),
             'Mean_Enrichment':     f"{_mean(enrichment_vals):.4f}" if enrichment_vals else 'NA',
-            'Enrichment_Trend':    f"{trend:.6f}" if trend == trend else 'NA',  # nan check
+            'Enrichment_Trend_Per_Calendar_Year': f"{trend:.6f}" if trend == trend else 'NA',
             'Mean_Lethal_Freq':    f"{_mean(lethal_freqs):.4f}",
             'Mean_Viable_Freq':    f"{_mean(viable_freqs):.4f}",
         }
@@ -799,7 +905,7 @@ def analyse_go_term_lifecycle(output_prefix, datasets_dict):
     logger.info(f"GO term lifecycle written to: {output_file}")
     logger.info(f"  Total unique GO terms tracked: {len(rows)}")
     logger.info(f"  Present in all {len(timepoints)} timepoints: "
-                f"{sum(1 for r in rows if r['Years_Present'] == len(timepoints))}")
+                f"{sum(1 for r in rows if r['Snapshots_Present'] == len(timepoints))}")
 
 
 def compute_pairwise_similarity(output_prefix, datasets_dict):
@@ -812,12 +918,14 @@ def compute_pairwise_similarity(output_prefix, datasets_dict):
     Output: {prefix}_pairwise_gene_jaccard.csv
             {prefix}_pairwise_go_jaccard.csv
     """
-    timepoints = sorted(datasets_dict.keys())
+    timepoints = sorted(datasets_dict.keys(), key=_natural_key)
 
     # Build gene sets and active-GO-term sets per timepoint
     gene_sets = {}
     go_sets   = {}
-    for tp, (genes_dict, (enrichment_stats, _)) in sorted(datasets_dict.items()):
+    for tp, (genes_dict, (enrichment_stats, _)) in sorted(
+        datasets_dict.items(), key=lambda item: _natural_key(item[0])
+    ):
         gene_sets[tp] = set(genes_dict.keys())
         go_sets[tp]   = {t for t, s in enrichment_stats.items() if s['total_genes_with_term'] > 0}
 
@@ -839,12 +947,12 @@ def compute_pairwise_similarity(output_prefix, datasets_dict):
     write_matrix(f"{output_prefix}_pairwise_gene_jaccard.csv",   gene_sets)
     write_matrix(f"{output_prefix}_pairwise_go_jaccard.csv",     go_sets)
 
-    # Log the consecutive-year Jaccard scores as a quick diagnostic
-    logger.info("Consecutive-year Jaccard (gene sets):")
+    # Adjacent entries are not necessarily consecutive calendar years.
+    logger.info("Adjacent available-snapshot Jaccard (gene sets):")
     for i in range(1, len(timepoints)):
         j = jaccard(gene_sets[timepoints[i-1]], gene_sets[timepoints[i]])
         logger.info(f"  {timepoints[i-1]} → {timepoints[i]}: {j:.4f}")
-    logger.info("Consecutive-year Jaccard (GO feature sets):")
+    logger.info("Adjacent available-snapshot Jaccard (GO feature sets):")
     for i in range(1, len(timepoints)):
         j = jaccard(go_sets[timepoints[i-1]], go_sets[timepoints[i]])
         logger.info(f"  {timepoints[i-1]} → {timepoints[i]}: {j:.4f}")
@@ -882,12 +990,14 @@ def analyse_go_term_depth_distribution(output_prefix, datasets_dict, depths_map)
         logger.warning("No GO depth data available — skipping depth distribution analysis.")
         return
 
-    timepoints = sorted(datasets_dict.keys())
+    timepoints = sorted(datasets_dict.keys(), key=_natural_key)
 
     # ── Collect per-timepoint depth data ─────────────────────────────────────
     tp_data = {}   # timepoint -> {'all': [depths], 'lethal': [depths], 'viable': [depths]}
 
-    for tp, (_, (enrichment_stats, _)) in sorted(datasets_dict.items()):
+    for tp, (_, (enrichment_stats, _)) in sorted(
+        datasets_dict.items(), key=lambda item: _natural_key(item[0])
+    ):
         dm = depths_map.get(tp)
         if not dm:
             tp_data[tp] = None
@@ -930,7 +1040,9 @@ def analyse_go_term_depth_distribution(output_prefix, datasets_dict, depths_map)
         writer = csv.DictWriter(f, fieldnames=header)
         writer.writeheader()
 
-        for tp, (_, (enrichment_stats, _)) in sorted(datasets_dict.items()):
+        for tp, (_, (enrichment_stats, _)) in sorted(
+            datasets_dict.items(), key=lambda item: _natural_key(item[0])
+        ):
             data = tp_data.get(tp)
             total_active = sum(1 for s in enrichment_stats.values()
                                if s['total_genes_with_term'] > 0)
@@ -999,7 +1111,7 @@ def analyse_go_term_depth_distribution(output_prefix, datasets_dict, depths_map)
                     row[field] = 'NA'
             else:
                 a = _depth_stats(data['all'])
-                l = _depth_stats(data['lethal'])
+                lethal = _depth_stats(data['lethal'])
                 v = _depth_stats(data['viable'])
                 row = {
                     'Timepoint':                tp,
@@ -1010,13 +1122,13 @@ def analyse_go_term_depth_distribution(output_prefix, datasets_dict, depths_map)
                     'All_Min':                  a['Min'],
                     'All_Max':                  a['Max'],
                     'All_N':                    a['N'],
-                    'Lethal_Enriched_Mean':     l['Mean'],
-                    'Lethal_Enriched_Median':   l['Median'],
-                    'Lethal_Enriched_P25':      l['P25'],
-                    'Lethal_Enriched_P75':      l['P75'],
-                    'Lethal_Enriched_Min':      l['Min'],
-                    'Lethal_Enriched_Max':      l['Max'],
-                    'Lethal_Enriched_N':        l['N'],
+                    'Lethal_Enriched_Mean':     lethal['Mean'],
+                    'Lethal_Enriched_Median':   lethal['Median'],
+                    'Lethal_Enriched_P25':      lethal['P25'],
+                    'Lethal_Enriched_P75':      lethal['P75'],
+                    'Lethal_Enriched_Min':      lethal['Min'],
+                    'Lethal_Enriched_Max':      lethal['Max'],
+                    'Lethal_Enriched_N':        lethal['N'],
                     'Viable_Enriched_Mean':     v['Mean'],
                     'Viable_Enriched_Median':   v['Median'],
                     'Viable_Enriched_P25':      v['P25'],
@@ -1039,10 +1151,11 @@ def analyse_data_sparsity(output_prefix, datasets_dict):
 
     Output: {prefix}_sparsity_over_time.csv
     """
-    timepoints = sorted(datasets_dict.keys())
     rows = []
 
-    for tp, (genes_dict, _) in sorted(datasets_dict.items()):
+    for tp, (genes_dict, _) in sorted(
+        datasets_dict.items(), key=lambda item: _natural_key(item[0])
+    ):
         # Count GO features (value == '1') per gene
         go_counts = []
         for gene, info in genes_dict.items():
@@ -1131,6 +1244,15 @@ Examples:
     parser.add_argument(
         "--top-n", dest="top_n", type=int, default=20,
         help="Number of top GO terms to track (default: 20).")
+    parser.add_argument(
+        "--max-fdr", dest="max_fdr", type=float, default=0.05,
+        help="Maximum Benjamini-Hochberg FDR for ranked enrichment terms (default: 0.05).")
+    parser.add_argument(
+        "-overwrite", action="store_true",
+        help="Replace a non-empty output directory.")
+    parser.add_argument(
+        "-allow_missing_manifests", action="store_true",
+        help="Allow exploratory legacy ARFFs without strict snapshot manifests.")
 
     args = parser.parse_args()
 
@@ -1139,10 +1261,61 @@ Examples:
         parser.error("-timepoints is required when using -arff_files")
     if args.arff_files and len(args.arff_files) != len(args.timepoints):
         parser.error("Number of -arff_files entries must match number of -timepoints entries")
+    if args.timepoints and len(set(args.timepoints)) != len(args.timepoints):
+        parser.error("Timepoint labels must be unique")
+    if args.top_n < 1:
+        parser.error("--top-n must be at least 1")
+    if not 0 < args.max_fdr <= 1:
+        parser.error("--max-fdr must be in (0, 1]")
+    if os.path.basename(args.output) != args.output:
+        parser.error("-o must be a filename prefix, not a path")
+    direct_missing = [
+        path for path in (args.arff_files or []) if not os.path.isfile(path)
+    ]
+    if direct_missing:
+        parser.error("ARFF file(s) not found: " + ", ".join(direct_missing))
+
+    if args.input_dir:
+        if not os.path.isdir(args.input_dir):
+            parser.error(f"Input directory not found: {args.input_dir}")
+        arff_entries = discover_datasets_from_dir(args.input_dir)
+        if not arff_entries:
+            parser.error(f"No PhenGO output subdirectories found in {args.input_dir}")
+    else:
+        arff_entries = [
+            (timepoint, arff_path, None)
+            for arff_path, timepoint in zip(args.arff_files, args.timepoints)
+        ]
+    if len(arff_entries) < 2:
+        parser.error("At least two valid timepoints are required")
+    try:
+        source_manifests = _validate_snapshot_manifests(
+            arff_entries, args.allow_missing_manifests,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+
+    preloaded = {}
+    try:
+        for timepoint, arff_file, _ in arff_entries:
+            genes, terms = parse_arff_with_terms(arff_file)
+            preloaded[timepoint] = (
+                genes,
+                terms,
+                calculate_enrichment_stats(genes, terms),
+            )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     # ── Set up output directory and logging ───────────────────────────────────
-    args.output_dir = os.path.abspath(args.output_dir)
-    os.makedirs(args.output_dir, exist_ok=True)
+    try:
+        args.output_dir = prepare_output_dir(
+            args.output_dir,
+            args.overwrite,
+            protected_paths=[entry[1] for entry in arff_entries],
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     logger = configure_logger('PhenGO.GO_temporal_analysis', enable_file=True,
                               log_dir=args.output_dir,
@@ -1151,22 +1324,10 @@ Examples:
 
     output_prefix = os.path.join(args.output_dir, args.output)
 
-    # ── Collect ARFF files and GO depth data ──────────────────────────────────
-    arff_entries = []   # list of (timepoint_label, arff_path, go_json_path or None)
-
-    if args.input_dir:
-        logger.info(f"Discovering PhenGO output directories in: {args.input_dir}")
-        arff_entries = discover_datasets_from_dir(args.input_dir)
-        if not arff_entries:
-            logger.error(f"No PhenGO output subdirectories found in {args.input_dir}")
-            return
-        logger.info(f"Found {len(arff_entries)} timepoints:")
-        for tp, arff, go_json in arff_entries:
-            depth_note = " (depths available)" if go_json else " (no depth data)"
-            logger.info(f"  {tp}: {arff}{depth_note}")
-    else:
-        for arff_path, tp in zip(args.arff_files, args.timepoints):
-            arff_entries.append((tp, arff_path, None))
+    logger.info("Validated %d timepoints", len(arff_entries))
+    for tp, arff, go_json in arff_entries:
+        depth_note = " (depths available)" if go_json else " (no depth data)"
+        logger.info(f"  {tp}: {arff}{depth_note}")
 
     # ── Build depths_map from JSON files ─────────────────────────────────────
     depths_map = {}
@@ -1189,8 +1350,7 @@ Examples:
             logger.error(f"  ARFF file not found: {arff_file}  (skipping {timepoint})")
             continue
         logger.info(f"  Loading {timepoint}: {arff_file}")
-        genes, terms = parse_arff_with_terms(arff_file)
-        enrichment_stats, summary = calculate_enrichment_stats(genes, terms)
+        genes, terms, (enrichment_stats, summary) = preloaded[timepoint]
         datasets_dict[timepoint] = (genes, (enrichment_stats, summary))
         all_go_terms.update(terms)
 
@@ -1227,8 +1387,13 @@ Examples:
 
     # ── Standard outputs ──────────────────────────────────────────────────────
     logger.info("\nGenerating temporal analysis outputs...")
-    write_temporal_top_terms(output_prefix, datasets_dict, args.top_n)
-    write_rank_stability(output_prefix, datasets_dict, args.top_n)
+    write_enrichment_statistics(output_prefix, datasets_dict)
+    write_temporal_top_terms(
+        output_prefix, datasets_dict, args.top_n, args.max_fdr,
+    )
+    write_rank_stability(
+        output_prefix, datasets_dict, args.top_n, args.max_fdr,
+    )
     write_gene_classification_changes(output_prefix, gene_timeline, changing_genes)
     write_summary_statistics_timeline(output_prefix, datasets_dict, depths_map=depths_map)
     write_classification_stability_summary(output_prefix, gene_timeline, changing_genes, stable_genes)
@@ -1241,6 +1406,46 @@ Examples:
     compute_pairwise_similarity(output_prefix, datasets_dict)
     analyse_data_sparsity(output_prefix, datasets_dict)
     analyse_go_term_depth_distribution(output_prefix, datasets_dict, depths_map)
+
+    repo_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+    repository_status = git_status(repo_dir)
+    output_hashes = {}
+    for root, _, filenames in os.walk(args.output_dir):
+        for filename in filenames:
+            if filename.endswith('.log') or filename == 'temporal_analysis_manifest.json':
+                continue
+            path = os.path.join(root, filename)
+            output_hashes[os.path.relpath(path, args.output_dir)] = sha256_file(path)
+    temporal_manifest = {
+        'schema_version': 2,
+        'created_utc': datetime.now(timezone.utc).isoformat(),
+        'analysis': 'PhenGO temporal GO analysis',
+        'tool_version': PhenGO_VERSION,
+        'git_commit': git_commit(repo_dir),
+        'git_dirty': bool(repository_status),
+        'git_status': repository_status,
+        'source_tree_sha256': source_tree_sha256(repo_dir),
+        'command': list(sys.argv),
+        'dependencies': dependency_versions(),
+        'configuration': vars(args),
+        'datasets': [
+            {
+                'timepoint': entry[0],
+                'path': os.path.abspath(entry[1]),
+                'sha256': sha256_file(entry[1]),
+                'snapshot_id': (manifest or {}).get('snapshot_id'),
+                'source_manifest': bool(manifest),
+            }
+            for entry, manifest in zip(arff_entries, source_manifests)
+        ],
+        'outputs': output_hashes,
+    }
+    with open(
+        os.path.join(args.output_dir, 'temporal_analysis_manifest.json'),
+        'w', encoding='utf-8',
+    ) as handle:
+        json.dump(temporal_manifest, handle, indent=2, sort_keys=True)
+        handle.write('\n')
 
     logger.info("\nTemporal analysis complete!")
     logger.info(f"All outputs written to: {args.output_dir}/")
@@ -1258,13 +1463,8 @@ Examples:
     logger.info(f"  {output_prefix}_sparsity_over_time.csv")
     logger.info(f"  {output_prefix}_go_depth_distribution.csv")
     logger.info(f"  {output_prefix}_go_depth_stats.csv")
-    logger.info(f"  GO_temporal_analysis.log")
+    logger.info("  GO_temporal_analysis.log")
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
-

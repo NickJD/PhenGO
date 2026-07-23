@@ -1,190 +1,254 @@
+"""Multi-dataset model comparison for PhenGO-Predict.
+
+This convenience workflow honours every model requested by the user. Paper-level
+temporal inference should use ``phengo-version-sensitivity``, which adds repeated
+out-of-fold transfer estimates and matched cohorts.
 """
-predict/compare.py — Multi-dataset comparison and differential GO-term importance
-reporting for PhenGO-Predict.
-"""
-import os
-import argparse
+from __future__ import annotations
+
+import json
 import logging
+import os
+import re
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+from sklearn.metrics import (
+    accuracy_score,
+    average_precision_score,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import roc_auc_score
 
-from .data       import load_arff_data, prepare_data
-from .model      import create_model_sparse_optimised
-from .evaluate   import compute_class_weights
-from .importance import analyse_feature_importance
-from .visualise  import plot_roc_curve
+from .data import load_arff_data, prepare_data
+from .sklearn_models import train_evaluate_sklearn_model
 
 logger = logging.getLogger(__name__)
 
-try:
-    from tensorflow import keras
-except ImportError as e:
-    logger.error(f"TensorFlow import failed: {e}")
-    raise
+
+def _safe_name(value):
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value)).strip("._")
+    return cleaned or "dataset"
 
 
-def compare_datasets(options, arff_files, dataset_names):
-    """Train separate models on each dataset and compare feature importances.
+def _load_importance(model_dir):
+    path = os.path.join(model_dir, "overall_feature_importance.csv")
+    if not os.path.isfile(path):
+        return None
+    result = pd.read_csv(path)
+    required = {"GO_Term", "Overall_Importance"}
+    return result if required <= set(result.columns) else None
 
-    Args:
-        options      : Namespace with output_dir, epochs, batch_size, test_size,
-                       hidden_units, dropout, perm_repeats attributes.
-        arff_files   : List of ARFF file paths.
-        dataset_names: List of display names (one per ARFF file).
 
-    Returns:
-        dict mapping dataset_name -> {model, importance, metrics, predictions, ...}
-    """
-    logger.info("=" * 80)
-    logger.info("MULTI-DATASET COMPARISON MODE")
-    logger.info(f"Comparing {len(arff_files)} datasets")
-    logger.info("=" * 80)
+def _train_nn(options, X_train, y_train, X_test, y_test, genes_test,
+              label_encoder, go_terms, output_dir):
+    try:
+        import tensorflow as tf
+        from tensorflow import keras
+    except ImportError as exc:
+        raise RuntimeError(f"TensorFlow is required for -model nn: {exc}") from exc
 
-    all_results = {}
+    from .evaluate import compute_class_weights, find_optimal_threshold
+    from .importance import analyse_feature_importance
+    from .model import create_model_sparse_optimised
+
+    tf.keras.utils.set_random_seed(options.seed)
+    try:
+        tf.config.experimental.enable_op_determinism()
+    except Exception:
+        logger.warning("TensorFlow deterministic operations are not available")
+
+    model_dir = os.path.join(output_dir, "nn")
+    os.makedirs(model_dir, exist_ok=True)
+    stratify = y_train if len(np.unique(y_train)) > 1 else None
+    X_fit, X_valid, y_fit, y_valid = train_test_split(
+        X_train,
+        y_train,
+        test_size=0.2,
+        random_state=options.seed,
+        stratify=stratify,
+    )
+    model = create_model_sparse_optimised(
+        input_dim=X_train.shape[1],
+        hidden_units=options.hidden_units,
+        dropout_rate=options.dropout,
+    )
+    model.fit(
+        X_fit,
+        y_fit,
+        epochs=options.epochs,
+        batch_size=options.batch_size,
+        validation_data=(X_valid, y_valid),
+        class_weight=compute_class_weights(y_fit),
+        callbacks=[keras.callbacks.EarlyStopping(
+            monitor="val_loss", patience=15, restore_best_weights=True,
+        )],
+        verbose=0,
+    )
+    validation_scores = model.predict(X_valid, verbose=0).reshape(-1)
+    threshold, _ = find_optimal_threshold(y_valid, validation_scores)
+    scores = model.predict(X_test, verbose=0).reshape(-1)
+    predictions = (scores >= threshold).astype(int)
+
+    pd.DataFrame({
+        "gene": list(genes_test),
+        "true_label": label_encoder.inverse_transform(y_test),
+        "predicted_label": label_encoder.inverse_transform(predictions),
+        "probability_lethal": scores,
+        "correct": predictions == y_test,
+    }).to_csv(os.path.join(model_dir, "predictions.csv"), index=False)
+
+    importance_options = type("Options", (), vars(options).copy())()
+    importance_options.output_dir = model_dir
+    analyse_feature_importance(
+        importance_options, model, go_terms, X_test, y_test, options.perm_repeats,
+    )
+    model.save(os.path.join(model_dir, "gene_essentiality_model.keras"))
+    with open(os.path.join(model_dir, "model_schema.json"), "w", encoding="utf-8") as handle:
+        json.dump({
+            "schema_version": 1,
+            "model_type": "nn",
+            "feature_names": list(go_terms),
+            "class_mapping": {"viable": 0, "lethal": 1},
+            "positive_class": "lethal",
+            "threshold": float(threshold),
+        }, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+    two_classes = len(np.unique(y_test)) > 1
+    return {
+        "model_type": "nn",
+        "label": "Neural Network",
+        "accuracy": accuracy_score(y_test, predictions),
+        "precision": precision_score(y_test, predictions, zero_division=0),
+        "recall": recall_score(y_test, predictions, zero_division=0),
+        "auc": roc_auc_score(y_test, scores) if two_classes else float("nan"),
+        "average_precision": (
+            average_precision_score(y_test, scores) if two_classes else float("nan")
+        ),
+        "f1_macro": f1_score(y_test, predictions, average="macro", zero_division=0),
+        "f1_lethal": f1_score(y_test, predictions, pos_label=1, zero_division=0),
+        "f1_viable": f1_score(y_test, predictions, pos_label=0, zero_division=0),
+    }
+
+
+def compare_datasets(options, arff_files, dataset_names, models_to_run):
+    """Train each requested model separately on every supplied dataset."""
+    logger.info("Comparing %d datasets with models: %s", len(arff_files), ", ".join(models_to_run))
+    metric_rows = []
+    importances = {}
 
     for arff_file, dataset_name in zip(arff_files, dataset_names):
-        logger.info(f"Processing dataset: {dataset_name}")
-        dataset_dir = os.path.join(options.output_dir, dataset_name)
+        dataset_dir = os.path.join(options.output_dir, _safe_name(dataset_name))
         os.makedirs(dataset_dir, exist_ok=True)
-
-        df, meta = load_arff_data(arff_file)
+        df, _ = load_arff_data(arff_file)
+        if df is None:
+            raise ValueError(f"Could not load {arff_file}")
         X, y, gene_names, label_encoder = prepare_data(df)
-
-        X_train, X_test, y_train, y_test, genes_train, genes_test = train_test_split(
-            X, y, gene_names, test_size=options.test_size, random_state=42, stratify=y,
+        if len(np.unique(y)) < 2 or int(np.bincount(y).min()) < 2:
+            raise ValueError(f"{dataset_name}: both classes need at least two genes")
+        X_train, X_test, y_train, y_test, _, genes_test = train_test_split(
+            X,
+            y,
+            gene_names,
+            test_size=options.test_size,
+            random_state=options.seed,
+            stratify=y,
         )
+        go_terms = list(df.columns[1:-1])
 
-        model = create_model_sparse_optimised(
-            input_dim=X.shape[1],
-            hidden_units=options.hidden_units,
-            dropout_rate=options.dropout,
-        )
-        ds_class_weights = compute_class_weights(y_train)
+        for model_type in models_to_run:
+            logger.info("Training %s on %s", model_type, dataset_name)
+            if model_type == "nn":
+                summary = _train_nn(
+                    options, X_train, y_train, X_test, y_test, genes_test,
+                    label_encoder, go_terms, dataset_dir,
+                )
+            else:
+                summary = train_evaluate_sklearn_model(
+                    model_type,
+                    X_train,
+                    y_train,
+                    X_test,
+                    y_test,
+                    genes_test,
+                    label_encoder,
+                    go_terms,
+                    dataset_dir,
+                    options,
+                )
+            metric_rows.append({"dataset": dataset_name, **summary})
+            importance = _load_importance(os.path.join(dataset_dir, model_type))
+            if importance is not None:
+                importances[(dataset_name, model_type)] = importance
 
-        history = model.fit(
-            X_train, y_train,
-            epochs=options.epochs,
-            batch_size=options.batch_size,
-            validation_split=0.2,
-            class_weight=ds_class_weights,
-            callbacks=[keras.callbacks.EarlyStopping(monitor="val_loss", patience=15,
-                                                     restore_best_weights=True)],
-            verbose=0,
-        )
-
-        y_pred_proba = model.predict(X_test, verbose=0)
-        test_results = model.evaluate(X_test, y_test, verbose=0)
-
-        dataset_options = argparse.Namespace(**vars(options))
-        dataset_options.output_dir = dataset_dir
-        go_term_columns = df.columns[1:-1]
-        overall_imp, lethal_imp, viable_imp = analyse_feature_importance(
-            dataset_options, model, go_term_columns, X_test, y_test, options.perm_repeats,
-        )
-
-        all_results[dataset_name] = {
-            "model":      model,
-            "importance": {"overall": overall_imp, "lethal": lethal_imp, "viable": viable_imp},
-            "metrics": {
-                "loss":      test_results[0],
-                "accuracy":  test_results[1],
-                "precision": test_results[2] if len(test_results) > 2 else 0,
-                "recall":    test_results[3] if len(test_results) > 3 else 0,
-                "auc":       roc_auc_score(y_test, y_pred_proba),
-            },
-            "predictions": y_pred_proba,
-            "true_labels": y_test,
-            "go_terms":    list(go_term_columns),
-        }
-
-        plot_roc_curve(options, y_test, y_pred_proba, dataset_name)
-
-    generate_comparison_plots(options, all_results, dataset_names)
-    generate_differential_importance_report(options, all_results, dataset_names)
-    return all_results
+    metrics_df = pd.DataFrame(metric_rows)
+    metrics_df.to_csv(os.path.join(options.output_dir, "comparison_metrics.csv"), index=False)
+    _write_metric_plot(options.output_dir, metrics_df)
+    _write_importance_comparisons(options.output_dir, dataset_names, models_to_run, importances)
+    return metric_rows
 
 
-def generate_comparison_plots(options, all_results, dataset_names):
-    """Metric bar-charts and GO-term importance heatmap across datasets."""
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    for idx, metric in enumerate(["accuracy", "precision", "recall"]):
-        values = [all_results[n]["metrics"][metric] for n in dataset_names]
-        axes[idx].bar(range(len(dataset_names)), values, alpha=0.7)
-        axes[idx].set_xticks(range(len(dataset_names)))
-        axes[idx].set_xticklabels(dataset_names, rotation=45, ha="right")
-        axes[idx].set_ylabel(metric.capitalize())
-        axes[idx].set_title(f"{metric.capitalize()} Comparison")
-        axes[idx].set_ylim([0, 1])
-        axes[idx].grid(axis="y", alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(os.path.join(options.output_dir, "model_performance_comparison.png"),
-                dpi=300, bbox_inches="tight")
-    plt.close()
-
-    all_top_terms = set()
-    for name in dataset_names:
-        top_30 = all_results[name]["importance"]["overall"].head(30)["GO_Term"]
-        all_top_terms.update(top_30)
-    term_list = sorted(all_top_terms)
-
-    importance_matrix = []
-    for term in term_list:
-        row = []
-        for name in dataset_names:
-            imp_df   = all_results[name]["importance"]["overall"]
-            term_imp = imp_df[imp_df["GO_Term"] == term]["Overall_Importance"]
-            row.append(term_imp.values[0] if len(term_imp) > 0 else 0)
-        importance_matrix.append(row)
-
-    fig, ax = plt.subplots(figsize=(12, max(8, len(term_list) * 0.3)))
-    im = ax.imshow(importance_matrix, cmap="YlOrRd", aspect="auto")
-    ax.set_xticks(range(len(dataset_names)))
-    ax.set_xticklabels(dataset_names, rotation=45, ha="right")
-    ax.set_yticks(range(len(term_list)))
-    ax.set_yticklabels(
-        [t[:50] + "..." if len(t) > 50 else t for t in term_list], fontsize=8,
-    )
-    ax.set_title("GO Term Importance Across Datasets", fontsize=14, pad=20)
-    plt.colorbar(im, ax=ax, label="Importance Score")
-    plt.tight_layout()
-    plt.savefig(os.path.join(options.output_dir, "go_term_importance_heatmap.png"),
-                dpi=300, bbox_inches="tight")
-    plt.close()
-    logger.info(f"Comparison plots saved to {options.output_dir}")
-
-
-def generate_differential_importance_report(options, all_results, dataset_names):
-    """Report GO terms with differential importance across exactly two datasets."""
-    if len(dataset_names) != 2:
-        logger.error("Differential analysis currently only supports 2 datasets")
+def _write_metric_plot(output_dir, metrics_df):
+    if metrics_df.empty:
         return
+    pivot = metrics_df.pivot(index="dataset", columns="model_type", values="auc")
+    ax = pivot.plot(kind="bar", figsize=(max(8, len(pivot) * 1.5), 5), ylim=(0, 1))
+    ax.set_ylabel("ROC AUC")
+    ax.set_xlabel("Dataset")
+    ax.set_title("Held-out model performance by dataset")
+    ax.axhline(0.5, color="grey", linestyle="--", linewidth=1)
+    ax.legend(title="Model")
+    plt.tight_layout()
+    plt.savefig(os.path.join(output_dir, "model_performance_comparison.png"), dpi=200)
+    plt.close()
 
-    name1, name2 = dataset_names
-    imp1 = all_results[name1]["importance"]["overall"]
-    imp2 = all_results[name2]["importance"]["overall"]
 
-    merged = pd.merge(
-        imp1[["GO_Term","Overall_Importance","Overall_Std"]],
-        imp2[["GO_Term","Overall_Importance","Overall_Std"]],
-        on="GO_Term", suffixes=(f"_{name1}", f"_{name2}"),
-    )
-    merged["Importance_Diff"] = (merged[f"Overall_Importance_{name1}"] -
-                                 merged[f"Overall_Importance_{name2}"])
-    merged["Abs_Diff"] = abs(merged["Importance_Diff"])
-    merged_sorted = merged.sort_values("Abs_Diff", ascending=False)
+def _write_importance_comparisons(output_dir, dataset_names, models, importances, top_k=20):
+    overlap_rows = []
+    for model in models:
+        for name_a in dataset_names:
+            for name_b in dataset_names:
+                imp_a = importances.get((name_a, model))
+                imp_b = importances.get((name_b, model))
+                if imp_a is None or imp_b is None:
+                    continue
+                top_a = set(imp_a.nlargest(top_k, "Overall_Importance")["GO_Term"])
+                top_b = set(imp_b.nlargest(top_k, "Overall_Importance")["GO_Term"])
+                union = top_a | top_b
+                overlap_rows.append({
+                    "model": model,
+                    "dataset_a": name_a,
+                    "dataset_b": name_b,
+                    "top_k": top_k,
+                    "n_overlap": len(top_a & top_b),
+                    "jaccard": len(top_a & top_b) / len(union) if union else float("nan"),
+                })
 
-    report_path = os.path.join(options.output_dir, "differential_importance_report.csv")
-    merged_sorted.to_csv(report_path, index=False)
+        if len(dataset_names) == 2:
+            name_a, name_b = dataset_names
+            imp_a = importances.get((name_a, model))
+            imp_b = importances.get((name_b, model))
+            if imp_a is not None and imp_b is not None:
+                merged = imp_a[["GO_Term", "Overall_Importance"]].merge(
+                    imp_b[["GO_Term", "Overall_Importance"]],
+                    on="GO_Term",
+                    how="outer",
+                    suffixes=(f"_{_safe_name(name_a)}", f"_{_safe_name(name_b)}"),
+                ).fillna(0)
+                columns = [column for column in merged if column.startswith("Overall_Importance_")]
+                merged["Importance_Difference"] = merged[columns[0]] - merged[columns[1]]
+                merged["Absolute_Difference"] = merged["Importance_Difference"].abs()
+                merged.sort_values("Absolute_Difference", ascending=False).to_csv(
+                    os.path.join(output_dir, f"{model}_differential_importance.csv"),
+                    index=False,
+                )
 
-    logger.info("=" * 80)
-    logger.info("TOP 20 DIFFERENTIALLY IMPORTANT GO TERMS")
-    logger.info("=" * 80)
-    logger.info(f"Positive: more important in {name1} | Negative: more important in {name2}")
-    logger.info("\n" + merged_sorted[[
-        "GO_Term", "Importance_Diff",
-        f"Overall_Importance_{name1}", f"Overall_Importance_{name2}",
-    ]].head(20).to_string(index=False))
-    logger.info(f"Full report saved to: {report_path}")
+    if overlap_rows:
+        pd.DataFrame(overlap_rows).to_csv(
+            os.path.join(output_dir, "feature_importance_overlap.csv"), index=False,
+        )

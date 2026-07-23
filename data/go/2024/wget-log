@@ -1,0 +1,12 @@
+--2026-07-22 12:14:11--  https://release.geneontology.org/2024-01-17/ontology/go-basic.owl
+Resolving release.geneontology.org (release.geneontology.org)... 172.64.145.49, 104.18.42.207, 2606:4700:4400::ac40:9131, ...
+Connecting to release.geneontology.org (release.geneontology.org)|172.64.145.49|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 115357577 (110M) [application/rdf+xml]
+Saving to: ‘go-basic.owl’
+
+go-basic.owl         17%[==>                 ]  19.47M  --.-KB/s    eta 5m 41s go-basic.owl         18%[==>                 ]  20.56M   926KB/s    eta 5m 41s go-basic.owl         22%[===>                ]  24.36M  3.47MB/s    eta 5m 41s go-basic.owl         26%[====>               ]  29.11M  5.99MB/s    eta 5m 41s go-basic.owl         30%[=====>              ]  33.92M  7.99MB/s    eta 5m 41s go-basic.owl         35%[======>             ]  38.75M  9.59MB/s    eta 2m 17s go-basic.owl         39%[======>             ]  43.57M  10.9MB/s    eta 2m 17s go-basic.owl         43%[=======>            ]  48.37M  12.0MB/s    eta 2m 17s go-basic.owl         48%[========>           ]  53.20M  12.9MB/s    eta 2m 17s go-basic.owl         52%[=========>          ]  58.02M  13.7MB/s    eta 2m 17s go-basic.owl         57%[==========>         ]  62.83M  14.4MB/s    eta 57s    go-basic.owl         61%[===========>        ]  67.66M  15.0MB/s    eta 57s    go-basic.owl         65%[============>       ]  72.48M  15.5MB/s    eta 57s    go-basic.owl         70%[=============>      ]  77.30M  16.0MB/s    eta 57s    go-basic.owl         74%[=============>      ]  82.13M  16.4MB/s    eta 57s    go-basic.owl         79%[==============>     ]  86.96M  22.4MB/s    eta 20s    go-basic.owl         83%[===============>    ]  91.79M  23.3MB/s    eta 20s    go-basic.owl         87%[================>   ]  96.61M  23.7MB/s    eta 20s    go-basic.owl         92%[=================>  ] 101.44M  24.1MB/s    eta 20s    go-basic.owl         96%[==================> ] 106.18M  24.0MB/s    eta 20s    go-basic.owl        100%[===================>] 110.01M  24.0MB/s    in 77s     
+
+utime(go-basic.owl): No such file or directory
+2026-07-22 12:15:34 (1.42 MB/s) - ‘go-basic.owl’ saved [115357577/115357577]
+

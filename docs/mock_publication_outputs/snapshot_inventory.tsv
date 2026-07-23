@@ -1,0 +1,288 @@
+data_status	track	organism	timepoint	snapshot_id	strict_snapshot	genes	lethal	viable	go_features	label_source	go_relations	go_evidence_exclude
+synthetic_mock_not_results	primary	fish	2015	fish-2015-primary	True	6048	1013	5035	5157	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fish	2016	fish-2016-primary	True	6021	975	5046	5315	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fish	2017	fish-2017-primary	True	6040	1007	5033	5538	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fish	2018	fish-2018-primary	True	6143	1100	5043	5827	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fish	2019	fish-2019-primary	True	6339	1217	5122	6171	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fish	2020	fish-2020-primary	True	6602	1307	5295	6546	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fish	2021	fish-2021-primary	True	6882	1331	5551	6921	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fish	2022	fish-2022-primary	True	7123	1290	5833	7268	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fish	2023	fish-2023-primary	True	7284	1225	6059	7560	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fish	2024	fish-2024-primary	True	7351	1191	6160	7786	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fish	2025	fish-2025-primary	True	7345	1221	6124	7948	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fly	2015	fly-2015-primary	True	10719	2383	8336	5971	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fly	2016	fly-2016-primary	True	10790	2479	8311	6268	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fly	2017	fly-2017-primary	True	10954	2663	8291	6617	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fly	2018	fly-2018-primary	True	11197	2852	8345	6994	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fly	2019	fly-2019-primary	True	11478	2958	8520	7368	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fly	2020	fly-2020-primary	True	11739	2940	8799	7708	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fly	2021	fly-2021-primary	True	11932	2830	9102	7993	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fly	2022	fly-2022-primary	True	12032	2713	9319	8210	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fly	2023	fly-2023-primary	True	12048	2676	9372	8364	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fly	2024	fly-2024-primary	True	12020	2754	9266	8473	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	fly	2025	fly-2025-primary	True	12002	2909	9093	8564	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	mouse	2015	mouse-2015-primary	True	7579	2298	5281	6965	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	mouse	2016	mouse-2016-primary	True	7798	2471	5327	7343	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	mouse	2017	mouse-2017-primary	True	8071	2636	5435	7714	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	mouse	2018	mouse-2018-primary	True	8346	2726	5620	8048	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	mouse	2019	mouse-2019-primary	True	8567	2716	5851	8324	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	mouse	2020	mouse-2020-primary	True	8702	2640	6062	8533	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	mouse	2021	mouse-2021-primary	True	8745	2566	6179	8680	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	mouse	2022	mouse-2022-primary	True	8727	2558	6169	8785	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	mouse	2023	mouse-2023-primary	True	8699	2631	6068	8876	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	mouse	2024	mouse-2024-primary	True	8716	2756	5960	8984	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	mouse	2025	mouse-2025-primary	True	8818	2877	5941	9136	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	worm	2015	worm-2015-primary	True	14064	3099	10965	6159	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	worm	2016	worm-2016-primary	True	14345	3266	11079	6487	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	worm	2017	worm-2017-primary	True	14591	3279	11312	6754	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	worm	2018	worm-2018-primary	True	14759	3148	11611	6955	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	worm	2019	worm-2019-primary	True	14834	2965	11869	7096	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	worm	2020	worm-2020-primary	True	14832	2852	11980	7197	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	worm	2021	worm-2021-primary	True	14801	2886	11915	7288	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	worm	2022	worm-2022-primary	True	14797	3052	11745	7400	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	worm	2023	worm-2023-primary	True	14865	3266	11599	7560	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	worm	2024	worm-2024-primary	True	15027	3419	11608	7783	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	worm	2025	worm-2025-primary	True	15269	3438	11831	8073	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	yeast	2015	yeast-2015-primary	True	5505	979	4526	5384	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	yeast	2016	yeast-2016-primary	True	5705	982	4723	5576	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	yeast	2017	yeast-2017-primary	True	5812	926	4886	5710	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	yeast	2024	yeast-2024-primary	True	6443	1113	5330	7064	release_records	is_a;part_of	
+synthetic_mock_not_results	primary	yeast	2025	yeast-2025-primary	True	6718	1075	5643	7441	release_records	is_a;part_of	
+synthetic_mock_not_results	is_a_only	fish	2015	fish-2015-is_a_only	True	6048	1013	5035	4692	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fish	2016	fish-2016-is_a_only	True	6021	975	5046	4836	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fish	2017	fish-2017-is_a_only	True	6040	1007	5033	5039	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fish	2018	fish-2018-is_a_only	True	6143	1100	5043	5302	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fish	2019	fish-2019-is_a_only	True	6339	1217	5122	5615	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fish	2020	fish-2020-is_a_only	True	6602	1307	5295	5956	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fish	2021	fish-2021-is_a_only	True	6882	1331	5551	6298	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fish	2022	fish-2022-is_a_only	True	7123	1290	5833	6613	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fish	2023	fish-2023-is_a_only	True	7284	1225	6059	6879	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fish	2024	fish-2024-is_a_only	True	7351	1191	6160	7085	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fish	2025	fish-2025-is_a_only	True	7345	1221	6124	7232	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fly	2015	fly-2015-is_a_only	True	10719	2383	8336	5433	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fly	2016	fly-2016-is_a_only	True	10790	2479	8311	5703	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fly	2017	fly-2017-is_a_only	True	10954	2663	8291	6021	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fly	2018	fly-2018-is_a_only	True	11197	2852	8345	6364	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fly	2019	fly-2019-is_a_only	True	11478	2958	8520	6704	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fly	2020	fly-2020-is_a_only	True	11739	2940	8799	7014	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fly	2021	fly-2021-is_a_only	True	11932	2830	9102	7273	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fly	2022	fly-2022-is_a_only	True	12032	2713	9319	7471	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fly	2023	fly-2023-is_a_only	True	12048	2676	9372	7611	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fly	2024	fly-2024-is_a_only	True	12020	2754	9266	7710	release_records	is_a	
+synthetic_mock_not_results	is_a_only	fly	2025	fly-2025-is_a_only	True	12002	2909	9093	7793	release_records	is_a	
+synthetic_mock_not_results	is_a_only	mouse	2015	mouse-2015-is_a_only	True	7579	2298	5281	6338	release_records	is_a	
+synthetic_mock_not_results	is_a_only	mouse	2016	mouse-2016-is_a_only	True	7798	2471	5327	6682	release_records	is_a	
+synthetic_mock_not_results	is_a_only	mouse	2017	mouse-2017-is_a_only	True	8071	2636	5435	7019	release_records	is_a	
+synthetic_mock_not_results	is_a_only	mouse	2018	mouse-2018-is_a_only	True	8346	2726	5620	7323	release_records	is_a	
+synthetic_mock_not_results	is_a_only	mouse	2019	mouse-2019-is_a_only	True	8567	2716	5851	7574	release_records	is_a	
+synthetic_mock_not_results	is_a_only	mouse	2020	mouse-2020-is_a_only	True	8702	2640	6062	7765	release_records	is_a	
+synthetic_mock_not_results	is_a_only	mouse	2021	mouse-2021-is_a_only	True	8745	2566	6179	7898	release_records	is_a	
+synthetic_mock_not_results	is_a_only	mouse	2022	mouse-2022-is_a_only	True	8727	2558	6169	7994	release_records	is_a	
+synthetic_mock_not_results	is_a_only	mouse	2023	mouse-2023-is_a_only	True	8699	2631	6068	8077	release_records	is_a	
+synthetic_mock_not_results	is_a_only	mouse	2024	mouse-2024-is_a_only	True	8716	2756	5960	8175	release_records	is_a	
+synthetic_mock_not_results	is_a_only	mouse	2025	mouse-2025-is_a_only	True	8818	2877	5941	8313	release_records	is_a	
+synthetic_mock_not_results	is_a_only	worm	2015	worm-2015-is_a_only	True	14064	3099	10965	5604	release_records	is_a	
+synthetic_mock_not_results	is_a_only	worm	2016	worm-2016-is_a_only	True	14345	3266	11079	5903	release_records	is_a	
+synthetic_mock_not_results	is_a_only	worm	2017	worm-2017-is_a_only	True	14591	3279	11312	6146	release_records	is_a	
+synthetic_mock_not_results	is_a_only	worm	2018	worm-2018-is_a_only	True	14759	3148	11611	6329	release_records	is_a	
+synthetic_mock_not_results	is_a_only	worm	2019	worm-2019-is_a_only	True	14834	2965	11869	6457	release_records	is_a	
+synthetic_mock_not_results	is_a_only	worm	2020	worm-2020-is_a_only	True	14832	2852	11980	6549	release_records	is_a	
+synthetic_mock_not_results	is_a_only	worm	2021	worm-2021-is_a_only	True	14801	2886	11915	6632	release_records	is_a	
+synthetic_mock_not_results	is_a_only	worm	2022	worm-2022-is_a_only	True	14797	3052	11745	6734	release_records	is_a	
+synthetic_mock_not_results	is_a_only	worm	2023	worm-2023-is_a_only	True	14865	3266	11599	6879	release_records	is_a	
+synthetic_mock_not_results	is_a_only	worm	2024	worm-2024-is_a_only	True	15027	3419	11608	7082	release_records	is_a	
+synthetic_mock_not_results	is_a_only	worm	2025	worm-2025-is_a_only	True	15269	3438	11831	7346	release_records	is_a	
+synthetic_mock_not_results	is_a_only	yeast	2015	yeast-2015-is_a_only	True	5505	979	4526	4899	release_records	is_a	
+synthetic_mock_not_results	is_a_only	yeast	2016	yeast-2016-is_a_only	True	5705	982	4723	5074	release_records	is_a	
+synthetic_mock_not_results	is_a_only	yeast	2017	yeast-2017-is_a_only	True	5812	926	4886	5196	release_records	is_a	
+synthetic_mock_not_results	is_a_only	yeast	2024	yeast-2024-is_a_only	True	6443	1113	5330	6428	release_records	is_a	
+synthetic_mock_not_results	is_a_only	yeast	2025	yeast-2025-is_a_only	True	6718	1075	5643	6771	release_records	is_a	
+synthetic_mock_not_results	no_iea	fish	2015	fish-2015-no_iea	True	6048	1013	5035	3713	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fish	2016	fish-2016-no_iea	True	6021	975	5046	3826	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fish	2017	fish-2017-no_iea	True	6040	1007	5033	3987	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fish	2018	fish-2018-no_iea	True	6143	1100	5043	4195	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fish	2019	fish-2019-no_iea	True	6339	1217	5122	4443	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fish	2020	fish-2020-no_iea	True	6602	1307	5295	4713	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fish	2021	fish-2021-no_iea	True	6882	1331	5551	4983	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fish	2022	fish-2022-no_iea	True	7123	1290	5833	5232	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fish	2023	fish-2023-no_iea	True	7284	1225	6059	5443	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fish	2024	fish-2024-no_iea	True	7351	1191	6160	5605	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fish	2025	fish-2025-no_iea	True	7345	1221	6124	5722	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fly	2015	fly-2015-no_iea	True	10719	2383	8336	4299	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fly	2016	fly-2016-no_iea	True	10790	2479	8311	4512	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fly	2017	fly-2017-no_iea	True	10954	2663	8291	4764	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fly	2018	fly-2018-no_iea	True	11197	2852	8345	5035	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fly	2019	fly-2019-no_iea	True	11478	2958	8520	5304	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fly	2020	fly-2020-no_iea	True	11739	2940	8799	5549	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fly	2021	fly-2021-no_iea	True	11932	2830	9102	5754	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fly	2022	fly-2022-no_iea	True	12032	2713	9319	5911	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fly	2023	fly-2023-no_iea	True	12048	2676	9372	6022	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fly	2024	fly-2024-no_iea	True	12020	2754	9266	6100	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	fly	2025	fly-2025-no_iea	True	12002	2909	9093	6166	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	mouse	2015	mouse-2015-no_iea	True	7579	2298	5281	5014	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	mouse	2016	mouse-2016-no_iea	True	7798	2471	5327	5286	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	mouse	2017	mouse-2017-no_iea	True	8071	2636	5435	5554	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	mouse	2018	mouse-2018-no_iea	True	8346	2726	5620	5794	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	mouse	2019	mouse-2019-no_iea	True	8567	2716	5851	5993	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	mouse	2020	mouse-2020-no_iea	True	8702	2640	6062	6143	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	mouse	2021	mouse-2021-no_iea	True	8745	2566	6179	6249	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	mouse	2022	mouse-2022-no_iea	True	8727	2558	6169	6325	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	mouse	2023	mouse-2023-no_iea	True	8699	2631	6068	6390	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	mouse	2024	mouse-2024-no_iea	True	8716	2756	5960	6468	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	mouse	2025	mouse-2025-no_iea	True	8818	2877	5941	6577	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	worm	2015	worm-2015-no_iea	True	14064	3099	10965	4434	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	worm	2016	worm-2016-no_iea	True	14345	3266	11079	4670	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	worm	2017	worm-2017-no_iea	True	14591	3279	11312	4862	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	worm	2018	worm-2018-no_iea	True	14759	3148	11611	5007	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	worm	2019	worm-2019-no_iea	True	14834	2965	11869	5109	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	worm	2020	worm-2020-no_iea	True	14832	2852	11980	5181	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	worm	2021	worm-2021-no_iea	True	14801	2886	11915	5247	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	worm	2022	worm-2022-no_iea	True	14797	3052	11745	5328	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	worm	2023	worm-2023-no_iea	True	14865	3266	11599	5443	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	worm	2024	worm-2024-no_iea	True	15027	3419	11608	5603	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	worm	2025	worm-2025-no_iea	True	15269	3438	11831	5812	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	yeast	2015	yeast-2015-no_iea	True	5505	979	4526	3876	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	yeast	2016	yeast-2016-no_iea	True	5705	982	4723	4014	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	yeast	2017	yeast-2017-no_iea	True	5812	926	4886	4111	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	yeast	2024	yeast-2024-no_iea	True	6443	1113	5330	5086	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	no_iea	yeast	2025	yeast-2025-no_iea	True	6718	1075	5643	5357	release_records	is_a;part_of	IEA
+synthetic_mock_not_results	fixed_2025	fish	2014	fish-2014-fixed_2025	True	6067	1094	4973	5045	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fish	2015	fish-2015-fixed_2025	True	6048	1013	5035	5157	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fish	2016	fish-2016-fixed_2025	True	6021	975	5046	5315	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fish	2017	fish-2017-fixed_2025	True	6040	1007	5033	5538	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fish	2018	fish-2018-fixed_2025	True	6143	1100	5043	5827	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fish	2019	fish-2019-fixed_2025	True	6339	1217	5122	6171	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fish	2020	fish-2020-fixed_2025	True	6602	1307	5295	6546	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fish	2021	fish-2021-fixed_2025	True	6882	1331	5551	6921	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fish	2022	fish-2022-fixed_2025	True	7123	1290	5833	7268	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fish	2023	fish-2023-fixed_2025	True	7284	1225	6059	7560	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fish	2024	fish-2024-fixed_2025	True	7351	1191	6160	7786	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fish	2025	fish-2025-fixed_2025	True	7345	1221	6124	7948	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fly	2014	fly-2014-fixed_2025	True	10723	2413	8310	5740	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fly	2015	fly-2015-fixed_2025	True	10719	2383	8336	5971	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fly	2016	fly-2016-fixed_2025	True	10790	2479	8311	6268	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fly	2017	fly-2017-fixed_2025	True	10954	2663	8291	6617	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fly	2018	fly-2018-fixed_2025	True	11197	2852	8345	6994	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fly	2019	fly-2019-fixed_2025	True	11478	2958	8520	7368	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fly	2020	fly-2020-fixed_2025	True	11739	2940	8799	7708	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fly	2021	fly-2021-fixed_2025	True	11932	2830	9102	7993	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fly	2022	fly-2022-fixed_2025	True	12032	2713	9319	8210	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fly	2023	fly-2023-fixed_2025	True	12048	2676	9372	8364	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fly	2024	fly-2024-fixed_2025	True	12020	2754	9266	8473	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	fly	2025	fly-2025-fixed_2025	True	12002	2909	9093	8564	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	mouse	2014	mouse-2014-fixed_2025	True	7449	2186	5263	6610	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	mouse	2015	mouse-2015-fixed_2025	True	7579	2298	5281	6965	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	mouse	2016	mouse-2016-fixed_2025	True	7798	2471	5327	7343	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	mouse	2017	mouse-2017-fixed_2025	True	8071	2636	5435	7714	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	mouse	2018	mouse-2018-fixed_2025	True	8346	2726	5620	8048	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	mouse	2019	mouse-2019-fixed_2025	True	8567	2716	5851	8324	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	mouse	2020	mouse-2020-fixed_2025	True	8702	2640	6062	8533	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	mouse	2021	mouse-2021-fixed_2025	True	8745	2566	6179	8680	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	mouse	2022	mouse-2022-fixed_2025	True	8727	2558	6169	8785	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	mouse	2023	mouse-2023-fixed_2025	True	8699	2631	6068	8876	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	mouse	2024	mouse-2024-fixed_2025	True	8716	2756	5960	8984	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	mouse	2025	mouse-2025-fixed_2025	True	8818	2877	5941	9136	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	worm	2014	worm-2014-fixed_2025	True	13805	2858	10947	5791	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	worm	2015	worm-2015-fixed_2025	True	14064	3099	10965	6159	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	worm	2016	worm-2016-fixed_2025	True	14345	3266	11079	6487	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	worm	2017	worm-2017-fixed_2025	True	14591	3279	11312	6754	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	worm	2018	worm-2018-fixed_2025	True	14759	3148	11611	6955	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	worm	2019	worm-2019-fixed_2025	True	14834	2965	11869	7096	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	worm	2020	worm-2020-fixed_2025	True	14832	2852	11980	7197	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	worm	2021	worm-2021-fixed_2025	True	14801	2886	11915	7288	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	worm	2022	worm-2022-fixed_2025	True	14797	3052	11745	7400	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	worm	2023	worm-2023-fixed_2025	True	14865	3266	11599	7560	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	worm	2024	worm-2024-fixed_2025	True	15027	3419	11608	7783	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	worm	2025	worm-2025-fixed_2025	True	15269	3438	11831	8073	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	yeast	2014	yeast-2014-fixed_2025	True	5240	908	4332	5125	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	yeast	2015	yeast-2015-fixed_2025	True	5505	979	4526	5384	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	yeast	2016	yeast-2016-fixed_2025	True	5705	982	4723	5576	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	yeast	2017	yeast-2017-fixed_2025	True	5812	926	4886	5710	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	yeast	2018	yeast-2018-fixed_2025	True	5834	857	4977	5809	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	yeast	2019	yeast-2019-fixed_2025	True	5808	824	4984	5901	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	yeast	2020	yeast-2020-fixed_2025	True	5787	853	4934	6017	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	yeast	2021	yeast-2021-fixed_2025	True	5825	933	4892	6185	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	yeast	2022	yeast-2022-fixed_2025	True	5953	1028	4925	6417	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	yeast	2023	yeast-2023-fixed_2025	True	6170	1098	5072	6714	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	yeast	2024	yeast-2024-fixed_2025	True	6443	1113	5330	7064	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025	yeast	2025	yeast-2025-fixed_2025	True	6718	1075	5643	7441	fixed_2025_gene_sets	is_a;part_of	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2010	fish-2010-fixed_2025_is_a	True	5400	972	4428	4104	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2011	fish-2011-fixed_2025_is_a	True	5673	1092	4581	4287	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2012	fish-2012-fixed_2025_is_a	True	5894	1167	4727	4415	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2013	fish-2013-fixed_2025_is_a	True	6026	1162	4864	4508	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2014	fish-2014-fixed_2025_is_a	True	6067	1094	4973	4590	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2015	fish-2015-fixed_2025_is_a	True	6048	1013	5035	4692	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2016	fish-2016-fixed_2025_is_a	True	6021	975	5046	4836	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2017	fish-2017-fixed_2025_is_a	True	6040	1007	5033	5039	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2018	fish-2018-fixed_2025_is_a	True	6143	1100	5043	5302	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2019	fish-2019-fixed_2025_is_a	True	6339	1217	5122	5615	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2020	fish-2020-fixed_2025_is_a	True	6602	1307	5295	5956	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2021	fish-2021-fixed_2025_is_a	True	6882	1331	5551	6298	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2022	fish-2022-fixed_2025_is_a	True	7123	1290	5833	6613	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2023	fish-2023-fixed_2025_is_a	True	7284	1225	6059	6879	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2024	fish-2024-fixed_2025_is_a	True	7351	1191	6160	7085	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fish	2025	fish-2025-fixed_2025_is_a	True	7345	1221	6124	7232	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2010	fly-2010-fixed_2025_is_a	True	10518	2683	7835	4792	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2011	fly-2011-fixed_2025_is_a	True	10684	2752	7932	4883	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2012	fly-2012-fixed_2025_is_a	True	10757	2688	8069	4966	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2013	fly-2013-fixed_2025_is_a	True	10754	2542	8212	5072	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2014	fly-2014-fixed_2025_is_a	True	10723	2413	8310	5223	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2015	fly-2015-fixed_2025_is_a	True	10719	2383	8336	5433	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2016	fly-2016-fixed_2025_is_a	True	10790	2479	8311	5703	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2017	fly-2017-fixed_2025_is_a	True	10954	2663	8291	6021	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2018	fly-2018-fixed_2025_is_a	True	11197	2852	8345	6364	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2019	fly-2019-fixed_2025_is_a	True	11478	2958	8520	6704	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2020	fly-2020-fixed_2025_is_a	True	11739	2940	8799	7014	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2021	fly-2021-fixed_2025_is_a	True	11932	2830	9102	7273	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2022	fly-2022-fixed_2025_is_a	True	12032	2713	9319	7471	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2023	fly-2023-fixed_2025_is_a	True	12048	2676	9372	7611	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2024	fly-2024-fixed_2025_is_a	True	12020	2754	9266	7710	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	fly	2025	fly-2025-fixed_2025_is_a	True	12002	2909	9093	7793	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2010	mouse-2010-fixed_2025_is_a	True	7436	2426	5010	5250	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2011	mouse-2011-fixed_2025_is_a	True	7456	2358	5098	5361	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2012	mouse-2012-fixed_2025_is_a	True	7429	2248	5181	5520	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2013	mouse-2013-fixed_2025_is_a	True	7409	2172	5237	5738	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2014	mouse-2014-fixed_2025_is_a	True	7449	2186	5263	6015	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2015	mouse-2015-fixed_2025_is_a	True	7579	2298	5281	6338	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2016	mouse-2016-fixed_2025_is_a	True	7798	2471	5327	6682	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2017	mouse-2017-fixed_2025_is_a	True	8071	2636	5435	7019	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2018	mouse-2018-fixed_2025_is_a	True	8346	2726	5620	7323	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2019	mouse-2019-fixed_2025_is_a	True	8567	2716	5851	7574	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2020	mouse-2020-fixed_2025_is_a	True	8702	2640	6062	7765	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2021	mouse-2021-fixed_2025_is_a	True	8745	2566	6179	7898	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2022	mouse-2022-fixed_2025_is_a	True	8727	2558	6169	7994	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2023	mouse-2023-fixed_2025_is_a	True	8699	2631	6068	8077	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2024	mouse-2024-fixed_2025_is_a	True	8716	2756	5960	8175	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	mouse	2025	mouse-2025-fixed_2025_is_a	True	8818	2877	5941	8313	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2010	worm-2010-fixed_2025_is_a	True	13536	2876	10660	4088	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2011	worm-2011-fixed_2025_is_a	True	13507	2691	10816	4314	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2012	worm-2012-fixed_2025_is_a	True	13520	2598	10922	4598	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2013	worm-2013-fixed_2025_is_a	True	13616	2660	10956	4924	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2014	worm-2014-fixed_2025_is_a	True	13805	2858	10947	5269	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2015	worm-2015-fixed_2025_is_a	True	14064	3099	10965	5604	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2016	worm-2016-fixed_2025_is_a	True	14345	3266	11079	5903	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2017	worm-2017-fixed_2025_is_a	True	14591	3279	11312	6146	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2018	worm-2018-fixed_2025_is_a	True	14759	3148	11611	6329	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2019	worm-2019-fixed_2025_is_a	True	14834	2965	11869	6457	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2020	worm-2020-fixed_2025_is_a	True	14832	2852	11980	6549	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2021	worm-2021-fixed_2025_is_a	True	14801	2886	11915	6632	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2022	worm-2022-fixed_2025_is_a	True	14797	3052	11745	6734	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2023	worm-2023-fixed_2025_is_a	True	14865	3266	11599	6879	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2024	worm-2024-fixed_2025_is_a	True	15027	3419	11608	7082	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	worm	2025	worm-2025-fixed_2025_is_a	True	15269	3438	11831	7346	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2010	yeast-2010-fixed_2025_is_a	True	4503	659	3844	3364	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2011	yeast-2011-fixed_2025_is_a	True	4566	648	3918	3694	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2012	yeast-2012-fixed_2025_is_a	True	4722	699	4023	4039	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2013	yeast-2013-fixed_2025_is_a	True	4961	798	4163	4371	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2014	yeast-2014-fixed_2025_is_a	True	5240	908	4332	4663	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2015	yeast-2015-fixed_2025_is_a	True	5505	979	4526	4899	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2016	yeast-2016-fixed_2025_is_a	True	5705	982	4723	5074	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2017	yeast-2017-fixed_2025_is_a	True	5812	926	4886	5196	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2018	yeast-2018-fixed_2025_is_a	True	5834	857	4977	5286	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2019	yeast-2019-fixed_2025_is_a	True	5808	824	4984	5369	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2020	yeast-2020-fixed_2025_is_a	True	5787	853	4934	5475	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2021	yeast-2021-fixed_2025_is_a	True	5825	933	4892	5628	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2022	yeast-2022-fixed_2025_is_a	True	5953	1028	4925	5839	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2023	yeast-2023-fixed_2025_is_a	True	6170	1098	5072	6109	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2024	yeast-2024-fixed_2025_is_a	True	6443	1113	5330	6428	fixed_2025_gene_sets	is_a	
+synthetic_mock_not_results	fixed_2025_is_a	yeast	2025	yeast-2025-fixed_2025_is_a	True	6718	1075	5643	6771	fixed_2025_gene_sets	is_a	

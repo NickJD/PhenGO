@@ -28,11 +28,19 @@ if __name__ == "__main__" and not __package__:
 
 
 import argparse
+import gzip
 import sys
 from collections import defaultdict
 from pathlib import Path
 import logging
 from ..constants import configure_logger
+
+
+def _open_text(path):
+    """Open plain-text or gzip-compressed ontology inputs."""
+    if str(path).endswith('.gz'):
+        return gzip.open(path, 'rt', encoding='utf-8')
+    return open(path, 'r', encoding='utf-8')
 
 
 class OBOParser:
@@ -53,7 +61,7 @@ class OBOParser:
         logger.info(f"Parsing OBO file: {obo_file_path}")
 
         try:
-            with open(obo_file_path, 'r', encoding='utf-8') as f:
+            with _open_text(obo_file_path) as f:
                 current_term = {}
                 in_term_section = False
 
@@ -190,8 +198,11 @@ def load_term_list(term_list_file):
 
     try:
         with open(term_list_file, 'r', encoding='utf-8') as f:
-            #terms = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-            terms = [line.split('\t', 1)[0] for line in f if line.strip() and not line.startswith('#')]
+            terms = [
+                line.strip().split()[0]
+                for line in f
+                if line.strip() and not line.lstrip().startswith('#')
+            ]
         logger.info(f"Loaded {len(terms)} terms from input file")
         return terms
 
@@ -300,8 +311,9 @@ Output format:
     # Load term list
     input_terms = load_term_list(args.term_list)
 
-    # Process each term and find all descendants
-    all_descendants = set()
+    # Process each term and find all descendants. The requested roots are
+    # themselves phenotype labels and must not be dropped from the result.
+    selected_terms = set()
     results = []
 
     logger.info("\nProcessing terms and finding all descendants...")
@@ -317,15 +329,19 @@ Output format:
 
         # Get all descendants
         descendant_ids = obo_parser.get_all_descendants(term_id)
-        all_descendants.update(descendant_ids)
+        selected_terms.add(term_id)
+        selected_terms.update(descendant_ids)
 
         if args.verbose:
             logger.info(f"  Found {len(descendant_ids)} total descendants")
 
     # Collect detailed info for all unique descendants
-    logger.info(f"\nCollecting information for {len(all_descendants)} unique descendants...")
+    logger.info(
+        "\nCollecting information for %d unique roots and descendants...",
+        len(selected_terms),
+    )
 
-    for term_id in sorted(all_descendants):
+    for term_id in sorted(selected_terms):
         term_info = obo_parser.get_term_info(term_id)
         if term_info:
             term_name = term_info.get('name', '')
@@ -334,7 +350,10 @@ Output format:
         else:
             results.append((term_id, '', ''))
 
-    logger.info(f"Found {len(results)} total descendants across {len(input_terms)} input terms")
+    logger.info(
+        "Found %d total roots and descendants across %d input terms",
+        len(results), len(input_terms),
+    )
 
     # Write results to output file
     write_results(args.results, results)

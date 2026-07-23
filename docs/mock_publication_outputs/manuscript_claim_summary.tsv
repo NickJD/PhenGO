@@ -1,0 +1,6 @@
+data_status	organism	primary_within_year_ap_range	fixed_label_ap_range	lr_mean_far_transfer_penalty	minimum_consecutive_gene_jaccard	interpretive_role
+synthetic_mock_not_results	fish	0.1025	0.0356	-0.0436	0.9482	Illustrates the planned effect-size summary; not evidence.
+synthetic_mock_not_results	fly	0.1136	0.0357	-0.0444	0.9482	Illustrates the planned effect-size summary; not evidence.
+synthetic_mock_not_results	mouse	0.0871	0.0352	-0.0493	0.9484	Illustrates the planned effect-size summary; not evidence.
+synthetic_mock_not_results	worm	0.1150	0.0360	-0.0546	0.9481	Illustrates the planned effect-size summary; not evidence.
+synthetic_mock_not_results	yeast	0.0346	0.0079	-0.0704	0.9481	Illustrates the planned effect-size summary; not evidence.

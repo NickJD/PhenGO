@@ -1,0 +1,24 @@
+{
+  "data_status": "synthetic_mock_not_results",
+  "figures": [
+    "figure_1_experimental_design.png",
+    "figure_2_resource_drift.png",
+    "figure_3_within_year_performance.png",
+    "figure_4a_transfer_all_models.png",
+    "figure_4b_transfer_all_organisms.png",
+    "figure_5_track_decomposition.png",
+    "figure_6_prediction_instability.png",
+    "figure_7_go_temporal_enrichment.png"
+  ],
+  "purpose": "layout and analysis-design review only",
+  "tables": [
+    "cross_year_transfer_performance.tsv",
+    "dataset_drift.tsv",
+    "manuscript_claim_summary.tsv",
+    "prediction_instability_summary.tsv",
+    "snapshot_inventory.tsv",
+    "temporal_enrichment_statistics.tsv",
+    "track_decomposition.tsv",
+    "within_year_model_performance.tsv"
+  ]
+}

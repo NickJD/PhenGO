@@ -3,10 +3,16 @@ predict/data.py — ARFF loading and data preparation for PhenGO-Predict.
 """
 import logging
 import csv
+import re
 
 logger = logging.getLogger(__name__)
 
 PHENOTYPE_CLASSES = ["viable", "lethal"]
+
+ATTRIBUTE_RE = re.compile(
+    r"^@attribute\s+(?:'([^']*)'|\"([^\"]*)\"|(\S+))\s+(.+)$",
+    re.IGNORECASE,
+)
 
 
 class PhenotypeLabelEncoder:
@@ -77,12 +83,12 @@ def load_arff_data(filepath):
                 if line.lower().startswith('@relation'):
                     continue
                 if line.lower().startswith('@attribute'):
-                    parts = line.split()
-                    if len(parts) >= 3:
-                        attr_name = parts[1].strip('"\'')
-                        attr_type = ' '.join(parts[2:]).strip()
-                        attribute_names.append(attr_name)
-                        attribute_types.append(attr_type)
+                    match = ATTRIBUTE_RE.match(line)
+                    if not match:
+                        raise ValueError(f"Malformed ARFF attribute declaration: {line}")
+                    attr_name = next(value for value in match.groups()[:3] if value is not None)
+                    attribute_names.append(attr_name)
+                    attribute_types.append(match.group(4).strip())
                     continue
                 if line.lower().startswith('@data'):
                     in_data_section = True
@@ -92,8 +98,9 @@ def load_arff_data(filepath):
                     if len(values) == len(attribute_names):
                         data_lines.append(values)
                     else:
-                        logger.warning(
-                            f"Line has {len(values)} values but expected {len(attribute_names)}"
+                        raise ValueError(
+                            f"ARFF row has {len(values)} values but expected "
+                            f"{len(attribute_names)}: {line[:120]}"
                         )
     except FileNotFoundError:
         logger.error(f"File {filepath} not found")
@@ -105,6 +112,9 @@ def load_arff_data(filepath):
     if not data_lines:
         logger.error("No data found in ARFF file")
         return None, None
+    if len(attribute_names) != len(set(attribute_names)):
+        duplicates = sorted({name for name in attribute_names if attribute_names.count(name) > 1})
+        raise ValueError("Duplicate ARFF attribute(s): " + ", ".join(duplicates))
 
     import pandas as pd
 
@@ -131,7 +141,24 @@ def prepare_data(df):
     """
     logger.info("Preparing data...")
 
-    gene_names = df.iloc[:, 0]
+    if df.shape[1] < 3:
+        raise ValueError("ARFF must contain a gene ID, at least one GO feature, and a class")
+    if df.columns.duplicated().any():
+        raise ValueError("Duplicate ARFF feature names are not permitted")
+
+    gene_column = df.columns[0]
+    if df[gene_column].astype(str).duplicated().any():
+        duplicate_ids = sorted(set(
+            df.loc[df[gene_column].astype(str).duplicated(False), gene_column].astype(str)
+        ))
+        for gene in duplicate_ids:
+            rows = df[df[gene_column].astype(str) == gene]
+            if not rows.eq(rows.iloc[0]).all().all():
+                raise ValueError(f"Conflicting duplicate ARFF rows for gene {gene}")
+        logger.warning("Removing %d exact duplicate gene IDs", len(duplicate_ids))
+        df = df.drop_duplicates(subset=[gene_column], keep="first").copy()
+
+    gene_names = df.iloc[:, 0].astype(str)
     phenotype  = df.iloc[:, -1]
     go_terms   = df.iloc[:, 1:-1]
 
@@ -143,8 +170,15 @@ def prepare_data(df):
 
     import numpy as np
 
-    X = go_terms.astype(float).values
-    X = np.nan_to_num(X, nan=0.0)
+    try:
+        X = go_terms.astype(float).values
+    except (TypeError, ValueError) as exc:
+        raise ValueError("GO features must be numeric binary values") from exc
+    if not np.isfinite(X).all():
+        raise ValueError("GO features contain missing or non-finite values")
+    unique_values = set(np.unique(X))
+    if not unique_values <= {0.0, 1.0}:
+        raise ValueError(f"GO features must be binary 0/1; found {sorted(unique_values)[:10]}")
 
     le = PhenotypeLabelEncoder()
     y  = np.asarray(le.fit_transform(phenotype), dtype=int)
@@ -157,7 +191,6 @@ def prepare_data(df):
     sparsity = (X == 0).sum() / X.size
     logger.info(f"Data sparsity:     {sparsity:.2%}")
 
-    unique_vals = np.unique(X)
-    logger.debug(f"Unique feature values: {unique_vals}")
+    logger.debug(f"Unique feature values: {np.unique(X)}")
 
     return X, y, gene_names, le

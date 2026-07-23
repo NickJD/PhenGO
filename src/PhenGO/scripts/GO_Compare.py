@@ -5,7 +5,8 @@ ARFF GO Term Analysis Script
 This script analyzes two ARFF files to compare GO term distributions between
 lethal and viable genes, providing comprehensive statistics and comparisons.
 """
-import os as _os, sys as _sys
+import os as _os
+import sys as _sys
 if __name__ == "__main__" and not __package__:
     import importlib.util as _ilu
     _here   = _os.path.dirname(_os.path.abspath(__file__))
@@ -34,50 +35,52 @@ import logging
 import os
 
 from ..constants import configure_logger, PhenGO_VERSION
+from ..predict.data import load_arff_data
+from ..provenance import prepare_output_dir
 
 logger = logging.getLogger(__name__)
 
 
 def parse_arff_with_terms(file_path):
     """Parse ARFF file and extract genes with their GO term features."""
-    data_started = False
+    frame, _ = load_arff_data(file_path)
+    if frame is None or frame.shape[1] < 3:
+        raise ValueError(f"Could not load usable ARFF data from {file_path}")
+    gene_column = frame.columns[0]
+    if frame[gene_column].astype(str).duplicated().any():
+        duplicate_ids = set(frame.loc[
+            frame[gene_column].astype(str).duplicated(False), gene_column,
+        ].astype(str))
+        for gene in duplicate_ids:
+            rows = frame[frame[gene_column].astype(str) == gene]
+            if not rows.eq(rows.iloc[0]).all().all():
+                raise ValueError(f"Conflicting duplicate rows for gene {gene}")
+        frame = frame.drop_duplicates(subset=[gene_column], keep='first')
+    go_terms = list(frame.columns[1:-1])
     genes = {}
-    attributes = []
+    for _, row in frame.iterrows():
+        genes[str(row.iloc[0])] = {
+            'label': str(row.iloc[-1]),
+            'features': {term: row[term] for term in go_terms},
+        }
+    return genes, go_terms
 
-    with open(file_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('%'):
-                continue
-            if line.lower().startswith('@attribute'):
-                parts = line.split()
-                attr_name = parts[1].strip("'\"")  # Clean quotes
-                attributes.append(attr_name)
-            elif line.lower() == '@data':
-                data_started = True
-            elif data_started:
-                parts = [p.strip().strip('"\'') for p in next(csv.reader([line]))]
-                if len(parts) < 3:  # Skip malformed lines
-                    continue
-                gene = parts[0]
-                label = parts[-1]
-                values = parts[1:-1]
 
-                # Handle case where there are more values than expected attributes
-                feature_dict = {}
-                for i, term in enumerate(attributes[1:-1]):
-                    if i < len(values):
-                        feature_dict[term] = values[i]
-                    else:
-                        feature_dict[term] = 'NA'
-
-                genes[gene] = {'label': label, 'features': feature_dict}
-
-    return genes, attributes[1:-1]  # Exclude gene name and label columns
+def _benjamini_hochberg(p_values):
+    values = list(map(float, p_values))
+    order = sorted(range(len(values)), key=values.__getitem__)
+    adjusted = [1.0] * len(values)
+    running = 1.0
+    for reverse_rank, index in enumerate(reversed(order), 1):
+        rank = len(values) - reverse_rank + 1
+        running = min(running, values[index] * len(values) / rank)
+        adjusted[index] = min(1.0, running)
+    return adjusted
 
 
 def calculate_go_term_stats(genes, go_terms):
     """Calculate GO term statistics for a set of genes."""
+    from scipy.stats import fisher_exact
     stats = {}
 
     # Separate genes by label
@@ -114,8 +117,9 @@ def calculate_go_term_stats(genes, go_terms):
         viable_freq = viable_count / total_viable if total_viable > 0 else 0
         total_freq = total_count / total_genes if total_genes > 0 else 0
 
-        # Calculate enrichment ratio (lethal vs viable)
-        enrichment_ratio = lethal_freq / viable_freq if viable_freq > 0 else float('inf') if lethal_freq > 0 else 0
+        lethal_adjusted = (lethal_count + 0.5) / (total_lethal + 1)
+        viable_adjusted = (viable_count + 0.5) / (total_viable + 1)
+        enrichment_ratio = lethal_adjusted / viable_adjusted
 
         # Calculate chi-square-like statistic for significance
         # Using simple odds ratio calculation
@@ -124,11 +128,7 @@ def calculate_go_term_stats(genes, go_terms):
         c = viable_count  # viable with GO term
         d = total_viable - viable_count  # viable without GO term
 
-        # Fisher's exact test approximation (odds ratio)
-        if b > 0 and c > 0 and d > 0:
-            odds_ratio = (a * d) / (b * c)
-        else:
-            odds_ratio = float('inf') if a > 0 and (c == 0 or b == 0) else 0
+        odds_ratio, p_value = fisher_exact([[a, b], [c, d]], alternative='two-sided')
 
         stats[go_term] = {
             'total_count': total_count,
@@ -139,8 +139,14 @@ def calculate_go_term_stats(genes, go_terms):
             'viable_frequency': viable_freq,
             'enrichment_ratio': enrichment_ratio,
             'odds_ratio': odds_ratio,
+            'p_value': p_value,
             'lethal_vs_total_ratio': lethal_count / total_count if total_count > 0 else 0
         }
+
+    for term, fdr in zip(go_terms, _benjamini_hochberg([
+        stats[term]['p_value'] for term in go_terms
+    ])):
+        stats[term]['fdr'] = fdr
 
     return stats, {
         'total_genes': total_genes,
@@ -167,6 +173,8 @@ def compare_go_distributions(stats_a, stats_b, go_terms, summary_a, summary_b):
             'a_viable_count': stat_a.get('viable_count', 0),
             'a_viable_freq': stat_a.get('viable_frequency', 0),
             'a_enrichment_ratio': stat_a.get('enrichment_ratio', 0),
+            'a_p_value': stat_a.get('p_value', 1),
+            'a_fdr': stat_a.get('fdr', 1),
 
             # Dataset B stats
             'b_total_count': stat_b.get('total_count', 0),
@@ -176,6 +184,8 @@ def compare_go_distributions(stats_a, stats_b, go_terms, summary_a, summary_b):
             'b_viable_count': stat_b.get('viable_count', 0),
             'b_viable_freq': stat_b.get('viable_frequency', 0),
             'b_enrichment_ratio': stat_b.get('enrichment_ratio', 0),
+            'b_p_value': stat_b.get('p_value', 1),
+            'b_fdr': stat_b.get('fdr', 1),
 
             # Comparisons
             'freq_difference': stat_a.get('total_frequency', 0) - stat_b.get('total_frequency', 0),
@@ -189,7 +199,7 @@ def compare_go_distributions(stats_a, stats_b, go_terms, summary_a, summary_b):
 
 def write_summary_statistics(output_file, summary_a, summary_b, file_a_name, file_b_name):
     """Write summary statistics to CSV."""
-    summary_file = output_file.replace('.csv', '_summary.csv')
+    summary_file = os.path.splitext(output_file)[0] + '_summary.csv'
 
     with open(summary_file, 'w', newline='') as csvfile:
         fieldnames = ['Metric', 'Dataset_A', 'Dataset_B', 'Difference', 'Percent_Change']
@@ -233,15 +243,16 @@ def write_summary_statistics(output_file, summary_a, summary_b, file_a_name, fil
 
 
 
-def write_top_go_terms(output_file, stats_a, stats_b, file_a_name, file_b_name, top_n=50):
+def write_top_go_terms(output_file, stats_a, stats_b, file_a_name, file_b_name,
+                       top_n=50, max_fdr=0.05):
     """Write top GO terms by different criteria."""
-    top_terms_file = output_file.replace('.csv', '_top_terms.csv')
+    top_terms_file = os.path.splitext(output_file)[0] + '_top_terms.csv'
 
     with open(top_terms_file, 'w', newline='') as csvfile:
         fieldnames = [
             'GO_Term', 'Category', 'Rank',
-            'A_Total_Count', 'A_Total_Freq', 'A_Lethal_Freq', 'A_Viable_Freq', 'A_Enrichment',
-            'B_Total_Count', 'B_Total_Freq', 'B_Lethal_Freq', 'B_Viable_Freq', 'B_Enrichment'
+            'A_Total_Count', 'A_Total_Freq', 'A_Lethal_Freq', 'A_Viable_Freq', 'A_Enrichment', 'A_FDR',
+            'B_Total_Count', 'B_Total_Freq', 'B_Lethal_Freq', 'B_Viable_Freq', 'B_Enrichment', 'B_FDR'
         ]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
@@ -259,8 +270,13 @@ def write_top_go_terms(output_file, stats_a, stats_b, file_a_name, file_b_name, 
         ]
 
         for category_name, sort_key, stats_dict in categories:
-            # Get top terms for this category
-            sorted_terms = sorted(stats_dict.keys(), key=sort_key, reverse=True)[:top_n]
+            candidates = list(stats_dict)
+            if 'Enriched' in category_name:
+                candidates = [
+                    term for term in candidates
+                    if stats_dict[term].get('fdr', 1) <= max_fdr
+                ]
+            sorted_terms = sorted(candidates, key=sort_key, reverse=True)[:top_n]
 
             for rank, go_term in enumerate(sorted_terms, 1):
                 stat_a = stats_a.get(go_term, {})
@@ -275,11 +291,13 @@ def write_top_go_terms(output_file, stats_a, stats_b, file_a_name, file_b_name, 
                     'A_Lethal_Freq': f"{stat_a.get('lethal_frequency', 0):.4f}",
                     'A_Viable_Freq': f"{stat_a.get('viable_frequency', 0):.4f}",
                     'A_Enrichment': f"{stat_a.get('enrichment_ratio', 0):.4f}",
+                    'A_FDR': f"{stat_a.get('fdr', 1):.6g}",
                     'B_Total_Count': stat_b.get('total_count', 0),
                     'B_Total_Freq': f"{stat_b.get('total_frequency', 0):.4f}",
                     'B_Lethal_Freq': f"{stat_b.get('lethal_frequency', 0):.4f}",
                     'B_Viable_Freq': f"{stat_b.get('viable_frequency', 0):.4f}",
-                    'B_Enrichment': f"{stat_b.get('enrichment_ratio', 0):.4f}"
+                    'B_Enrichment': f"{stat_b.get('enrichment_ratio', 0):.4f}",
+                    'B_FDR': f"{stat_b.get('fdr', 1):.6g}",
                 })
 
     logger.info(f"Top GO terms analysis written to: {top_terms_file}")
@@ -295,24 +313,38 @@ def main():
                         help="Second ARFF file for comparison")
     parser.add_argument("-o", dest="output", required=True,
                         help="Output CSV file prefix (multiple files will be generated)")
-    parser.add_argument("-output_dir", dest="output_dir", required=False, default='.',
-                        help="Directory to write output files (default: current directory)")
+    parser.add_argument("-output_dir", dest="output_dir", required=True,
+                        help="Directory to write output files")
     parser.add_argument("--top-n", dest="top_n", type=int, default=50,
                         help="Number of top GO terms to report for each category (default: 50)")
+    parser.add_argument("--max-fdr", dest="max_fdr", type=float, default=0.05)
+    parser.add_argument("-overwrite", action="store_true")
 
     args = parser.parse_args()
 
     # Prepare output directory and logging
-    args.output_dir = os.path.abspath(args.output_dir)
-    if not os.path.exists(args.output_dir):
-        os.makedirs(args.output_dir)
+    if not os.path.isfile(args.arff_a) or not os.path.isfile(args.arff_b):
+        parser.error("Both ARFF inputs must exist")
+    if args.top_n < 1 or not 0 < args.max_fdr <= 1:
+        parser.error("--top-n must be at least 1 and --max-fdr must be in (0, 1]")
+    if os.path.basename(args.output) != args.output:
+        parser.error("-o must be a filename, not a path")
+    try:
+        genes_a, terms_a = parse_arff_with_terms(args.arff_a)
+        genes_b, terms_b = parse_arff_with_terms(args.arff_b)
+    except ValueError as exc:
+        parser.error(str(exc))
+    try:
+        args.output_dir = prepare_output_dir(
+            args.output_dir, args.overwrite,
+            protected_paths=[args.arff_a, args.arff_b],
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     logger = configure_logger('PhenGO.GO_Compare', enable_file=True, log_dir=args.output_dir, logfile_name='GO_Compare.log', level=logging.INFO)
 
     logger.info("Loading ARFF files...")
-    genes_a, terms_a = parse_arff_with_terms(args.arff_a)
-    genes_b, terms_b = parse_arff_with_terms(args.arff_b)
-
     logger.info(f"Dataset A: {len(genes_a)} genes, {len(terms_a)} GO terms")
     logger.info(f"Dataset B: {len(genes_b)} genes, {len(terms_b)} GO terms")
 
@@ -337,8 +369,10 @@ def main():
             'GO_Term',
             'A_Total_Count', 'A_Total_Freq', 'A_Lethal_Count', 'A_Lethal_Freq',
             'A_Viable_Count', 'A_Viable_Freq', 'A_Enrichment_Ratio',
+            'A_P_Value', 'A_FDR',
             'B_Total_Count', 'B_Total_Freq', 'B_Lethal_Count', 'B_Lethal_Freq',
             'B_Viable_Count', 'B_Viable_Freq', 'B_Enrichment_Ratio',
+            'B_P_Value', 'B_FDR',
             'Total_Freq_Diff', 'Lethal_Freq_Diff', 'Viable_Freq_Diff', 'Enrichment_Diff'
         ]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -358,6 +392,8 @@ def main():
                 'A_Viable_Count': comp['a_viable_count'],
                 'A_Viable_Freq': f"{comp['a_viable_freq']:.4f}",
                 'A_Enrichment_Ratio': f"{comp['a_enrichment_ratio']:.4f}",
+                'A_P_Value': f"{comp['a_p_value']:.6g}",
+                'A_FDR': f"{comp['a_fdr']:.6g}",
                 'B_Total_Count': comp['b_total_count'],
                 'B_Total_Freq': f"{comp['b_total_freq']:.4f}",
                 'B_Lethal_Count': comp['b_lethal_count'],
@@ -365,6 +401,8 @@ def main():
                 'B_Viable_Count': comp['b_viable_count'],
                 'B_Viable_Freq': f"{comp['b_viable_freq']:.4f}",
                 'B_Enrichment_Ratio': f"{comp['b_enrichment_ratio']:.4f}",
+                'B_P_Value': f"{comp['b_p_value']:.6g}",
+                'B_FDR': f"{comp['b_fdr']:.6g}",
                 'Total_Freq_Diff': f"{comp['freq_difference']:.4f}",
                 'Lethal_Freq_Diff': f"{comp['lethal_freq_difference']:.4f}",
                 'Viable_Freq_Diff': f"{comp['viable_freq_difference']:.4f}",
@@ -373,14 +411,17 @@ def main():
 
     # Write additional analysis files
     write_summary_statistics(output_path, summary_a, summary_b, args.arff_a, args.arff_b)
-    write_top_go_terms(output_path, stats_a, stats_b, args.arff_a, args.arff_b, args.top_n)
+    write_top_go_terms(
+        output_path, stats_a, stats_b, args.arff_a, args.arff_b,
+        args.top_n, args.max_fdr,
+    )
 
     logger.info("\n✅ GO term analysis complete!")
     logger.info(f"Main comparison written to: {output_path}")
     logger.info(f"Additional files generated with prefix: {output_path.replace('.csv', '')}")
 
     # Print quick summary
-    logger.info(f"\nQuick Summary:")
+    logger.info("\nQuick Summary:")
     logger.info(f"Dataset A - Total: {summary_a['total_genes']}, Lethal: {summary_a['lethal_genes']}, Viable: {summary_a['viable_genes']}")
     logger.info(f"Dataset B - Total: {summary_b['total_genes']}, Lethal: {summary_b['lethal_genes']}, Viable: {summary_b['viable_genes']}")
 

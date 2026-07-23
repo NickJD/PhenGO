@@ -1,0 +1,19 @@
+metric	value
+overview_qub_assigned_sequence_rows	673
+unique_partner_isolate_ids	618
+unique_sh_like_ids	616
+non_sh_partner_isolate_rows	2
+unique_qub_ids	673
+unique_sequence_identifiers	673
+ab1_expected_files	673
+ab1_present_rows	655
+ab1_missing_rows	18
+ab1_directory_listing_status	UNAVAILABLE
+ab1_directory_listing_error	"PermissionError: [Errno 1] Operation not permitted: ""/Users/nicholas/Library/CloudStorage/OneDrive-SharedLibraries-Queen'sUniversityBelfast/RUMEN Gateway QUB-Scientific_Consortium - Documents/03_Partners_sequences/QUB/ab1_files"""
+listed_ab1_files	UNAVAILABLE
+listed_ab1_files_not_assigned_to_qub	UNAVAILABLE
+match_status__AMBIGUOUS_RAW_MATCH_SELECTED_EARLIEST_ROW	2
+match_status__MATCHED_NON_SH_RAW_CODE	1
+match_status__MATCHED_SH_PRIMER_BP	670
+ab1_status__MISSING_EXPECTED_FILE	18
+ab1_status__PRESENT	655

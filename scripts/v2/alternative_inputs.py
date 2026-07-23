@@ -1,0 +1,856 @@
+#!/usr/bin/env python3
+"""Prepare and audit alternative inputs for the PhenGO publication V2 run.
+
+This module intentionally lives outside ``src/PhenGO``.  The first publication
+run hashes that source tree while it is executing, so V2 support must not change
+the package source until the first run has completed.
+"""
+from __future__ import annotations
+
+import argparse
+import csv
+import gzip
+import hashlib
+import io
+import json
+import os
+import re
+from collections import Counter, defaultdict
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+FIVE_MIB = 5 * 1024 * 1024
+MGI_COLLECTIONS = {
+    "mgi_genepheno": "data/mouse/phenotype_data/historical_mgi_MGI_GenePheno",
+    "mgi_phenogenomp": "data/mouse/phenotype_data/historical_mgi_MGI_PhenoGenoMP",
+    "mgi_vocabulary": "data/mouse/phenotype_data/historical_mgi_VOC_MammalianPhenotype",
+}
+OTHER_COLLECTIONS = {
+    "impc_assertions": "data/mouse/phenotype_data/ebi",
+    "zfin_gaf": "data/fish/gene_association/zfin",
+    "flybase_gaf": "data/fly/gene_association/fb",
+    "wormbase_gaf": "data/worm/gene_association/wb",
+    "sgd_gaf": "data/yeast/gene_association/sgd",
+}
+
+FLY_ACCESSORY_PREFIXES = (
+    "Scer\\GAL4", "Ecol\\lexA", "Ecol\\lexAop", "Ncra\\QF",
+    "Ncra\\QUAS", "Scer\\FLP", "Scer\\GAL80", "Scer\\UAS",
+    "tetO", "rtTA", "tTA",
+)
+
+
+@contextmanager
+def open_text(path: str | os.PathLike[str]):
+    path = os.fspath(path)
+    if path.endswith(".gz"):
+        with gzip.open(path, "rt", encoding="utf-8", errors="replace", newline="") as handle:
+            yield handle
+    else:
+        with open(path, encoding="utf-8", errors="replace", newline="") as handle:
+            yield handle
+
+
+@contextmanager
+def deterministic_text_writer(path: str | os.PathLike[str]):
+    """Write plain text or reproducible gzip text (mtime and filename removed)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.suffix == ".gz":
+        with open(path, "wb") as raw:
+            with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as gz:
+                with io.TextIOWrapper(gz, encoding="utf-8", newline="") as handle:
+                    yield handle
+    else:
+        with open(path, "w", encoding="utf-8", newline="") as handle:
+            yield handle
+
+
+def sha256_file(path: str | os.PathLike[str]) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def logical_file_stats(path: str | os.PathLike[str]) -> dict:
+    digest = hashlib.sha256()
+    logical_bytes = 0
+    rows = 0
+    final_byte = b""
+    widths = Counter()
+    is_csv = ".csv" in Path(path).name.casefold()
+    opener = gzip.open if os.fspath(path).endswith(".gz") else open
+    with opener(path, "rb") as handle:
+        for line in handle:
+            digest.update(line)
+            logical_bytes += len(line)
+            rows += 1
+            final_byte = line[-1:] if line else final_byte
+            if not is_csv and line and not line.startswith((b"!", b"#")):
+                widths[len(line.rstrip(b"\r\n").split(b"\t"))] += 1
+    if is_csv:
+        with open_text(path) as handle:
+            widths.update(len(row) for row in csv.reader(handle) if row)
+    return {
+        "logical_sha256": digest.hexdigest(),
+        "logical_size_bytes": logical_bytes,
+        "row_count": rows,
+        "ends_with_newline": final_byte == b"\n" if rows else True,
+        "detected_delimiter": "comma" if is_csv else "tab",
+        "column_widths": ";".join(f"{key}:{value}" for key, value in sorted(widths.items())),
+    }
+
+
+def write_json(path: str | os.PathLike[str], payload: dict | list) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+
+
+def write_gene_set(path: str | os.PathLike[str], records) -> None:
+    with deterministic_text_writer(path) as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(["stable_gene_id", "gene_symbol"])
+        for stable_id, symbol in sorted(set(records), key=lambda item: (item[0], item[1])):
+            writer.writerow([stable_id, symbol])
+
+
+def taxa_for_gaf_row(row: list[str]) -> set[str]:
+    if len(row) <= 12:
+        return set()
+    return {item.strip() for item in row[12].split("|") if item.strip()}
+
+
+def filter_gaf(input_path: str, output_path: str, taxon: str, database: str | None) -> dict:
+    expected_taxon = f"taxon:{taxon}"
+    counts = Counter()
+    genes = set()
+    go_terms = set()
+    widths = Counter()
+    with open_text(input_path) as source, deterministic_text_writer(output_path) as target:
+        target.write("!Generated by PhenGO publication V2 taxon filter\n")
+        target.write(f"!source: {os.path.abspath(input_path)}\n")
+        target.write(f"!required-taxon: {expected_taxon}\n")
+        if database:
+            target.write(f"!required-database: {database}\n")
+        for raw_line in source:
+            if raw_line.startswith("!"):
+                target.write(raw_line if raw_line.endswith("\n") else raw_line + "\n")
+                counts["header_rows"] += 1
+                continue
+            counts["data_rows"] += 1
+            row = raw_line.rstrip("\r\n").split("\t")
+            widths[len(row)] += 1
+            if len(row) < 15:
+                counts["excluded_malformed"] += 1
+                continue
+            if database and row[0].strip() != database:
+                counts["excluded_database"] += 1
+                continue
+            if expected_taxon not in taxa_for_gaf_row(row):
+                counts["excluded_taxon"] += 1
+                continue
+            target.write("\t".join(row) + "\n")
+            counts["kept_rows"] += 1
+            genes.add(row[1].strip())
+            go_terms.add(row[4].strip())
+    if not counts["kept_rows"]:
+        raise ValueError(f"No GAF rows remained after filtering {input_path}")
+    return {
+        "operation": "filter_gaf",
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "source": os.path.abspath(input_path),
+        "source_sha256": sha256_file(input_path),
+        "output": os.path.abspath(output_path),
+        "output_sha256": sha256_file(output_path),
+        "taxon": expected_taxon,
+        "database": database,
+        "unique_stable_ids": len(genes),
+        "unique_go_terms": len(go_terms),
+        "input_column_widths": dict(sorted(widths.items())),
+        **dict(counts),
+    }
+
+
+def gaf_annotation_sets(path: str, taxon: str | None = None) -> dict[str, set]:
+    expected_taxon = f"taxon:{taxon}" if taxon else None
+    annotations = set()
+    evidence_annotations = set()
+    genes = set()
+    go_terms = set()
+    rows = 0
+    with open_text(path) as handle:
+        for raw_line in handle:
+            if raw_line.startswith("!"):
+                continue
+            row = raw_line.rstrip("\r\n").split("\t")
+            if len(row) < 7 or (expected_taxon and expected_taxon not in taxa_for_gaf_row(row)):
+                continue
+            stable_id, go_id, evidence = row[1].strip(), row[4].strip(), row[6].strip()
+            if not stable_id or not go_id:
+                continue
+            rows += 1
+            genes.add(stable_id)
+            go_terms.add(go_id)
+            # GAF 2.1 and 2.2 encode relation qualifiers differently.  Stable ID
+            # plus GO ID is the biologically comparable annotation key.
+            annotations.add((stable_id, go_id))
+            evidence_annotations.add((stable_id, go_id, evidence))
+    return {
+        "rows": rows,
+        "genes": genes,
+        "go_terms": go_terms,
+        "annotations": annotations,
+        "evidence_annotations": evidence_annotations,
+    }
+
+
+def overlap_stats(left: set, right: set, prefix: str) -> dict:
+    union = left | right
+    return {
+        f"{prefix}_left": len(left),
+        f"{prefix}_right": len(right),
+        f"{prefix}_shared": len(left & right),
+        f"{prefix}_left_only": len(left - right),
+        f"{prefix}_right_only": len(right - left),
+        f"{prefix}_jaccard": len(left & right) / len(union) if union else 1.0,
+    }
+
+
+def compare_gaf(left_path: str, right_path: str, taxon: str | None = None) -> dict:
+    left = gaf_annotation_sets(left_path, taxon)
+    right = gaf_annotation_sets(right_path, taxon)
+    return {
+        "operation": "compare_gaf",
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "left": os.path.abspath(left_path),
+        "right": os.path.abspath(right_path),
+        "left_sha256": sha256_file(left_path),
+        "right_sha256": sha256_file(right_path),
+        "taxon": f"taxon:{taxon}" if taxon else "not_filtered",
+        "left_rows": left["rows"],
+        "right_rows": right["rows"],
+        **overlap_stats(left["genes"], right["genes"], "stable_ids"),
+        **overlap_stats(left["go_terms"], right["go_terms"], "go_terms"),
+        **overlap_stats(left["annotations"], right["annotations"], "stable_id_go"),
+        **overlap_stats(
+            left["evidence_annotations"], right["evidence_annotations"], "stable_id_go_evidence"
+        ),
+    }
+
+
+def load_lethal_terms(path: str) -> set[str]:
+    terms = set()
+    with open_text(path) as handle:
+        for row in csv.reader(handle, delimiter="\t"):
+            if row and re.fullmatch(r"MP:\d+", row[0].strip()):
+                terms.add(row[0].strip())
+    if not terms:
+        raise ValueError(f"No MP lethal terms found in {path}")
+    return terms
+
+
+def split_mp_terms(value: str) -> set[str]:
+    return set(re.findall(r"MP:\d+", value or ""))
+
+
+def classify_gene_observations(observations: dict, symbols: dict) -> tuple[list, list, list]:
+    lethal = []
+    operational_nonlethal = []
+    excluded = []
+    for stable_id in sorted(observations):
+        calls = observations[stable_id]
+        symbol_values = sorted(value for value in symbols.get(stable_id, set()) if value)
+        symbol = symbol_values[0] if len(symbol_values) == 1 else ""
+        if "lethal" in calls:
+            lethal.append((stable_id, symbol))
+        elif "other_phenotype" in calls:
+            operational_nonlethal.append((stable_id, symbol))
+        else:
+            excluded.append((stable_id, symbol, "no_classifiable_mp_term"))
+    overlap = {row[0] for row in lethal} & {row[0] for row in operational_nonlethal}
+    if overlap:
+        raise ValueError(f"Internal label overlap for {len(overlap)} stable IDs")
+    return lethal, operational_nonlethal, excluded
+
+
+def write_excluded(path: str, rows) -> None:
+    with deterministic_text_writer(path) as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(["stable_gene_id", "gene_symbol", "reason"])
+        writer.writerows(sorted(set(rows)))
+
+
+def write_empty_fly_helper(path: str, year: str) -> dict:
+    """Create an explicit empty helper catalogue for a regex-only policy track."""
+    with deterministic_text_writer(path) as handle:
+        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
+        writer.writerow(["#record_id", "release", "helper_line_symbol"])
+    return {
+        "operation": "write_empty_fly_helper",
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "year": str(year),
+        "semantics": "no_historical_helper_catalogue_available_regex_patterns_only",
+        "output": os.path.abspath(path),
+        "output_sha256": sha256_file(path),
+        "helper_records": 0,
+    }
+
+
+def fly_phenotype_label(value: str) -> str | None:
+    """Return an explicit binary phenotype, leaving all ambiguity unlabelled."""
+    text = (value or "").casefold()
+    if (
+        re.search(r"\b(?:partially|semi[- ]?)\s*(?:lethal|viable)\b", text)
+        or re.search(r"\b(?:non[- ]?lethal|not\s+lethal)\b", text)
+    ):
+        return None
+    has_lethal = bool(re.search(r"\blethal\b", text))
+    has_viable = bool(re.search(r"\bviable\b", text))
+    if has_lethal == has_viable:
+        return None
+    return "lethal" if has_lethal else "viable"
+
+
+def fly_gene_from_allele(value: str) -> str | None:
+    """Extract a native gene symbol only from a simple allele-like component."""
+    component = (value or "").strip().strip("()")
+    if not component or "\\" in component.split("[", 1)[0]:
+        return None
+    allele = re.fullmatch(r"([^\[\]/,\s]+)\[[^\]]+\]", component)
+    if allele:
+        return allele.group(1).strip()
+    if re.fullmatch(r"[A-Za-z0-9_.:+-]+", component):
+        return component
+    return None
+
+
+def fly_accessory_component(value: str) -> bool:
+    """Recognise only a complete foreign-system component, never a host allele."""
+    component = (value or "").strip().strip("()")
+    root = component.split("[", 1)[0]
+    return any(root.casefold().startswith(prefix.casefold()) for prefix in FLY_ACCESSORY_PREFIXES)
+
+
+def split_fly_components(
+    value: str, *, delimiters: str, split_whitespace: bool = False
+) -> tuple[list[str], bool]:
+    """Split genotype syntax only at top-level separators outside ``[...]``."""
+    components = []
+    current = []
+    bracket_depth = 0
+    saw_separator = False
+    for character in value or "":
+        if character == "[":
+            bracket_depth += 1
+        elif character == "]" and bracket_depth:
+            bracket_depth -= 1
+        is_separator = bracket_depth == 0 and (
+            character in delimiters or (split_whitespace and character.isspace())
+        )
+        if is_separator:
+            saw_separator = True
+            component = "".join(current).strip().strip("()")
+            if component:
+                components.append(component)
+            current = []
+        else:
+            current.append(character)
+    component = "".join(current).strip().strip("()")
+    if component:
+        components.append(component)
+    return components, saw_separator
+
+
+def split_fly_with_clause(phenotype: str) -> tuple[str, list[str], bool]:
+    text = phenotype or ""
+    bracket_depth = 0
+    depth_at = []
+    for character in text:
+        depth_at.append(bracket_depth)
+        if character == "[":
+            bracket_depth += 1
+        elif character == "]" and bracket_depth:
+            bracket_depth -= 1
+    match = next(
+        (
+            candidate for candidate in re.finditer(r"\bwith\s+", text, re.IGNORECASE)
+            if depth_at[candidate.start()] == 0
+        ),
+        None,
+    )
+    if match is None:
+        return text.strip(), [], False
+    clean = text[:match.start()].strip().rstrip(",(").strip()
+    raw_components = text[match.end():].strip().rstrip(")").strip()
+    components, _ = split_fly_components(raw_components, delimiters=",")
+    return clean, components, True
+
+
+def classify_fly_compound(primary_gene: str, components: list[str]) -> tuple[str, list[str]]:
+    """Classify every component; any unknown component makes the row unresolved."""
+    roles = []
+    has_second_gene = False
+    has_unresolved = False
+    for component in components:
+        if fly_accessory_component(component):
+            roles.append(f"accessory:{component}")
+            continue
+        gene = fly_gene_from_allele(component)
+        if gene is None:
+            has_unresolved = True
+            roles.append(f"unresolved:{component}")
+        elif gene == primary_gene:
+            roles.append(f"same_gene:{component}")
+        else:
+            has_second_gene = True
+            roles.append(f"second_gene:{gene}:{component}")
+    if has_second_gene:
+        return "multi_gene", roles
+    if has_unresolved:
+        return "unresolved", roles
+    if any(role.startswith("same_gene:") for role in roles):
+        return "same_gene_compound", roles
+    if roles:
+        return "accessory_context", roles
+    return "simple", roles
+
+
+def build_fly_fail_closed_labels(
+    input_path: str,
+    lethal_output: str,
+    viable_output: str,
+    excluded_output: str,
+    audit_output: str,
+) -> dict:
+    """Derive explicit FlyBase labels while excluding every uncertain compound row."""
+    observations = defaultdict(set)
+    audit_rows = []
+    counts = Counter()
+
+    with open_text(input_path) as handle:
+        for line_number, row in enumerate(csv.reader(handle, delimiter="\t"), 1):
+            if not row or row[0].startswith("#"):
+                continue
+            counts["input_rows"] += 1
+            raw_primary = row[0] if row else ""
+            raw_phenotype = row[2] if len(row) > 2 else ""
+            audit = {
+                "line_number": line_number,
+                "schema_width": len(row),
+                "raw_primary": raw_primary,
+                "raw_phenotype": raw_phenotype,
+                "primary_gene": "",
+                "compound_components": "",
+                "component_roles": "",
+                "row_label": "",
+                "row_outcome": "",
+                "final_gene_outcome": "",
+                "details": "",
+            }
+            if len(row) not in {4, 7}:
+                audit["row_outcome"] = "excluded_unsupported_schema"
+                counts[audit["row_outcome"]] += 1
+                audit_rows.append(audit)
+                continue
+
+            components = []
+            phenotype = raw_phenotype
+            if len(row) == 4:
+                phenotype, components, had_with = split_fly_with_clause(raw_phenotype)
+                if had_with and not components:
+                    audit["row_outcome"] = "excluded_unresolved_compound"
+                    audit["details"] = "with clause was present but no components were parsed"
+                    counts[audit["row_outcome"]] += 1
+                    audit_rows.append(audit)
+                    continue
+            else:
+                genotype, had_separator = split_fly_components(
+                    raw_primary, delimiters="/", split_whitespace=True
+                )
+                if genotype:
+                    raw_primary, components = genotype[0], genotype[1:]
+                elif had_separator:
+                    raw_primary, components = "", []
+
+            primary_gene = fly_gene_from_allele(raw_primary)
+            audit["primary_gene"] = primary_gene or ""
+            audit["compound_components"] = " | ".join(components)
+            if fly_accessory_component(raw_primary):
+                audit["row_outcome"] = "excluded_accessory_primary"
+            elif not primary_gene:
+                audit["row_outcome"] = "excluded_unresolved_primary"
+            else:
+                label = fly_phenotype_label(phenotype)
+                if label is None:
+                    audit["row_outcome"] = "excluded_nonexplicit_or_ambiguous_phenotype"
+                else:
+                    compound_status, roles = classify_fly_compound(primary_gene, components)
+                    audit["component_roles"] = " | ".join(roles)
+                    if compound_status == "multi_gene":
+                        audit["row_outcome"] = "excluded_multi_gene"
+                    elif compound_status == "unresolved":
+                        audit["row_outcome"] = "excluded_unresolved_compound"
+                    else:
+                        audit["row_label"] = label
+                        audit["row_outcome"] = f"candidate_{compound_status}"
+                        observations[primary_gene].add(label)
+            counts[audit["row_outcome"]] += 1
+            audit_rows.append(audit)
+
+    final = {}
+    excluded_genes = []
+    for gene, labels in sorted(observations.items()):
+        if len(labels) != 1:
+            excluded_genes.append(("", gene, "mixed_lethal_and_viable_observations"))
+            final[gene] = "excluded_mixed_gene_labels"
+        else:
+            label = next(iter(labels))
+            final[gene] = f"included_{label}"
+    for row in audit_rows:
+        gene = row["primary_gene"]
+        if row["row_outcome"].startswith("candidate_"):
+            row["final_gene_outcome"] = final.get(gene, "excluded_no_final_label")
+        else:
+            row["final_gene_outcome"] = "not_a_label_candidate"
+
+    lethal = [("", gene) for gene, outcome in final.items() if outcome == "included_lethal"]
+    viable = [("", gene) for gene, outcome in final.items() if outcome == "included_viable"]
+    if not lethal or not viable:
+        raise ValueError(
+            f"Fail-closed FlyBase labels lack both classes: lethal={len(lethal)}, viable={len(viable)}"
+        )
+    write_gene_set(lethal_output, lethal)
+    write_gene_set(viable_output, viable)
+    write_excluded(excluded_output, excluded_genes)
+    with deterministic_text_writer(audit_output) as handle:
+        fields = list(audit_rows[0]) if audit_rows else ["line_number", "row_outcome"]
+        writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t", lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(audit_rows)
+
+    return {
+        "operation": "fly_fail_closed_explicit_labels",
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "source": os.path.abspath(input_path),
+        "source_sha256": sha256_file(input_path),
+        "policy": "explicit_binary_labels_only; all unresolved compound contexts excluded",
+        "lethal_genes": len(lethal),
+        "viable_genes": len(viable),
+        "mixed_genes_excluded": len(excluded_genes),
+        "audit_rows": len(audit_rows),
+        "audit_sha256": sha256_file(audit_output),
+        **dict(counts),
+    }
+
+
+def build_impc_labels(
+    input_path: str,
+    lethal_terms_path: str,
+    lethal_output: str,
+    viable_output: str,
+    excluded_output: str,
+) -> dict:
+    lethal_terms = load_lethal_terms(lethal_terms_path)
+    observations = defaultdict(set)
+    symbols = defaultdict(set)
+    counts = Counter()
+    with open_text(input_path) as handle:
+        reader = csv.DictReader(handle)
+        required = {"marker_accession_id", "marker_symbol", "mp_term_id"}
+        if not reader.fieldnames or not required <= set(reader.fieldnames):
+            raise ValueError(f"IMPC assertion schema missing {sorted(required)} in {input_path}")
+        for row in reader:
+            counts["assertion_rows"] += 1
+            stable_id = (row.get("marker_accession_id") or "").strip()
+            if not re.fullmatch(r"MGI:\d+", stable_id):
+                counts["excluded_invalid_stable_id"] += 1
+                continue
+            terms = split_mp_terms(row.get("mp_term_id") or "")
+            if not terms:
+                counts["excluded_missing_mp_term"] += 1
+                continue
+            symbols[stable_id].add((row.get("marker_symbol") or "").strip())
+            observations[stable_id].add("lethal" if terms & lethal_terms else "other_phenotype")
+    lethal, viable, excluded = classify_gene_observations(observations, symbols)
+    if not lethal or not viable:
+        raise ValueError(f"IMPC labels lack both classes: lethal={len(lethal)}, other={len(viable)}")
+    write_gene_set(lethal_output, lethal)
+    write_gene_set(viable_output, viable)
+    write_excluded(excluded_output, excluded)
+    return {
+        "operation": "impc_assertion_labels",
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "source": os.path.abspath(input_path),
+        "source_sha256": sha256_file(input_path),
+        "lethal_terms": os.path.abspath(lethal_terms_path),
+        "lethal_terms_sha256": sha256_file(lethal_terms_path),
+        "negative_class_semantics": "gene_has_other_IMPC_phenotype_assertion_but_no_selected_lethal_MP_term",
+        "lethal_genes": len(lethal),
+        "operational_nonlethal_genes": len(viable),
+        "excluded_genes": len(excluded),
+        "genes_with_lethal_and_other_assertions": sum(
+            calls >= {"lethal", "other_phenotype"} for calls in observations.values()
+        ),
+        **dict(counts),
+    }
+
+
+def build_mgi_labels(
+    input_path: str,
+    report_format: str,
+    lethal_terms_path: str,
+    lethal_output: str,
+    viable_output: str,
+    excluded_output: str,
+) -> dict:
+    indices = {
+        "genepheno": (4, 6, 9),
+        "phenogenomp": (3, 5, 7),
+    }
+    mp_index, gene_index, expected_width = indices[report_format]
+    lethal_terms = load_lethal_terms(lethal_terms_path)
+    observations = defaultdict(set)
+    symbols = defaultdict(set)
+    counts = Counter()
+    invalid = []
+    with open_text(input_path) as handle:
+        for row_number, row in enumerate(csv.reader(handle, delimiter="\t"), 1):
+            counts["report_rows"] += 1
+            if len(row) < max(mp_index, gene_index) + 1:
+                counts["excluded_malformed_rows"] += 1
+                invalid.append((f"row:{row_number}", "", "malformed_row"))
+                continue
+            if len(row) != expected_width:
+                counts["noncanonical_width_rows"] += 1
+            ids = re.findall(r"MGI:\d+", row[gene_index])
+            if len(set(ids)) != 1:
+                counts["excluded_nonunique_stable_id"] += 1
+                invalid.append((f"row:{row_number}", "", "missing_or_multiple_gene_ids"))
+                continue
+            stable_id = ids[0]
+            terms = split_mp_terms(row[mp_index])
+            if not terms:
+                counts["excluded_missing_mp_term"] += 1
+                invalid.append((stable_id, "", "missing_mp_term"))
+                continue
+            observations[stable_id].add("lethal" if terms & lethal_terms else "other_phenotype")
+    lethal, viable, excluded = classify_gene_observations(observations, symbols)
+    excluded.extend(invalid)
+    if not lethal or not viable:
+        raise ValueError(f"MGI labels lack both classes: lethal={len(lethal)}, other={len(viable)}")
+    write_gene_set(lethal_output, lethal)
+    write_gene_set(viable_output, viable)
+    write_excluded(excluded_output, excluded)
+    return {
+        "operation": "mgi_report_labels",
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "report_format": report_format,
+        "source": os.path.abspath(input_path),
+        "source_sha256": sha256_file(input_path),
+        "lethal_terms": os.path.abspath(lethal_terms_path),
+        "lethal_terms_sha256": sha256_file(lethal_terms_path),
+        "negative_class_semantics": "gene_has_other_MGI_phenotype_association_but_no_selected_lethal_MP_term",
+        "lethal_genes": len(lethal),
+        "operational_nonlethal_genes": len(viable),
+        "excluded_records": len(excluded),
+        "genes_with_lethal_and_other_associations": sum(
+            calls >= {"lethal", "other_phenotype"} for calls in observations.values()
+        ),
+        **dict(counts),
+    }
+
+
+def infer_year(path: Path) -> str:
+    for part in reversed(path.parent.parts):
+        if re.fullmatch(r"(?:19|20)\d{2}", part):
+            return part
+    matches = re.findall(r"(?:19|20)\d{2}", path.name)
+    return matches[-1] if matches else ""
+
+
+def audit_inputs(repo_root: str) -> list[dict]:
+    root = Path(repo_root).resolve()
+    rows = []
+    for collection, relative in {**MGI_COLLECTIONS, **OTHER_COLLECTIONS}.items():
+        directory = root / relative
+        if not directory.is_dir():
+            rows.append({
+                "collection": collection,
+                "path": str(directory),
+                "status": "missing_collection",
+                "exclusion_reason": "directory_not_found",
+            })
+            continue
+        for path in sorted(item for item in directory.rglob("*") if item.is_file()):
+            if path.name == ".DS_Store":
+                continue
+            relative_path = str(path.relative_to(root))
+            row = {
+                "collection": collection,
+                "nominal_year": infer_year(path),
+                "filename_years": ",".join(re.findall(r"(?:19|20)\d{2}", path.name)),
+                "path": str(path),
+                "relative_path": relative_path,
+                "compression": "gzip" if path.suffix == ".gz" else "plain",
+                "physical_size_bytes": path.stat().st_size,
+                "physical_sha256": sha256_file(path),
+                "duplicate_of": "",
+                "exclusion_reason": "",
+            }
+            if path.name.lower().startswith("read") or path.suffix.lower() in {".md", ".txt"}:
+                row.update(status="metadata", exclusion_reason="not_a_dataset")
+            else:
+                try:
+                    row.update(logical_file_stats(path))
+                    truncated = (
+                        path.stat().st_size == FIVE_MIB
+                        or row["logical_size_bytes"] == FIVE_MIB
+                        or not row["ends_with_newline"]
+                    )
+                    if truncated:
+                        row.update(status="excluded_truncated", exclusion_reason="truncation_signature")
+                    elif collection == "mgi_vocabulary":
+                        row.update(status="audit_only", exclusion_reason="vocabulary_has_no_MP_hierarchy")
+                    else:
+                        row.update(status="eligible")
+                except (OSError, EOFError, gzip.BadGzipFile) as exc:
+                    row.update(status="excluded_unreadable", exclusion_reason=type(exc).__name__)
+            rows.append(row)
+
+    # Logical duplicates are retained in the ledger but only one capture is eligible.
+    groups = defaultdict(list)
+    for row in rows:
+        if row.get("logical_sha256") and row.get("status") == "eligible":
+            groups[(row["collection"], row["logical_sha256"])].append(row)
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        group.sort(key=lambda row: (
+            int(row.get("nominal_year") or 9999),
+            0 if row["compression"] == "gzip" else 1,
+            row["relative_path"],
+        ))
+        canonical = group[0]
+        for duplicate in group[1:]:
+            duplicate["status"] = "excluded_duplicate"
+            duplicate["duplicate_of"] = canonical["relative_path"]
+            duplicate["exclusion_reason"] = "identical_decompressed_content"
+    return sorted(rows, key=lambda row: (row["collection"], row.get("nominal_year", ""), row["path"]))
+
+
+def write_audit(rows: list[dict], tsv_path: str, json_path: str) -> None:
+    fields = [
+        "collection", "nominal_year", "status", "exclusion_reason", "relative_path",
+        "compression", "physical_size_bytes", "physical_sha256", "logical_size_bytes",
+        "logical_sha256", "row_count", "ends_with_newline", "column_widths", "duplicate_of",
+    ]
+    Path(tsv_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(tsv_path, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, delimiter="\t", extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+    write_json(json_path, {
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "records": rows,
+        "status_counts": dict(Counter(row.get("status", "") for row in rows)),
+    })
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    gaf = subparsers.add_parser("filter-gaf", help="Taxon-filter a GAF reproducibly")
+    gaf.add_argument("--input", required=True)
+    gaf.add_argument("--output", required=True)
+    gaf.add_argument("--taxon", required=True)
+    gaf.add_argument("--database")
+    gaf.add_argument("--summary", required=True)
+
+    compare = subparsers.add_parser("compare-gaf", help="Compare GAF biological annotation keys")
+    compare.add_argument("--left", required=True)
+    compare.add_argument("--right", required=True)
+    compare.add_argument("--taxon")
+    compare.add_argument("--output", required=True)
+
+    impc = subparsers.add_parser("impc-labels", help="Derive operational labels from IMPC assertions")
+    impc.add_argument("--input", required=True)
+    impc.add_argument("--lethal-terms", required=True)
+    impc.add_argument("--lethal-output", required=True)
+    impc.add_argument("--viable-output", required=True)
+    impc.add_argument("--excluded-output", required=True)
+    impc.add_argument("--summary", required=True)
+
+    mgi = subparsers.add_parser("mgi-labels", help="Derive operational labels from an MGI report")
+    mgi.add_argument("--input", required=True)
+    mgi.add_argument("--format", required=True, choices=["genepheno", "phenogenomp"])
+    mgi.add_argument("--lethal-terms", required=True)
+    mgi.add_argument("--lethal-output", required=True)
+    mgi.add_argument("--viable-output", required=True)
+    mgi.add_argument("--excluded-output", required=True)
+    mgi.add_argument("--summary", required=True)
+
+    audit = subparsers.add_parser("audit", help="Inventory alternative inputs and exclusions")
+    audit.add_argument("--repo-root", required=True)
+    audit.add_argument("--output-tsv", required=True)
+    audit.add_argument("--output-json", required=True)
+
+    helper = subparsers.add_parser(
+        "empty-fly-helper",
+        help="Write a manifestable empty helper catalogue for the regex-only track",
+    )
+    helper.add_argument("--output", required=True)
+    helper.add_argument("--year", required=True)
+    helper.add_argument("--summary", required=True)
+
+    fly = subparsers.add_parser(
+        "fly-labels",
+        help="Derive explicit FlyBase labels with fail-closed compound parsing",
+    )
+    fly.add_argument("--input", required=True)
+    fly.add_argument("--lethal-output", required=True)
+    fly.add_argument("--viable-output", required=True)
+    fly.add_argument("--excluded-output", required=True)
+    fly.add_argument("--audit-output", required=True)
+    fly.add_argument("--summary", required=True)
+
+    args = parser.parse_args()
+    if args.command == "filter-gaf":
+        summary = filter_gaf(args.input, args.output, args.taxon, args.database)
+        write_json(args.summary, summary)
+    elif args.command == "compare-gaf":
+        write_json(args.output, compare_gaf(args.left, args.right, args.taxon))
+    elif args.command == "impc-labels":
+        summary = build_impc_labels(
+            args.input, args.lethal_terms, args.lethal_output,
+            args.viable_output, args.excluded_output,
+        )
+        write_json(args.summary, summary)
+    elif args.command == "mgi-labels":
+        summary = build_mgi_labels(
+            args.input, args.format, args.lethal_terms, args.lethal_output,
+            args.viable_output, args.excluded_output,
+        )
+        write_json(args.summary, summary)
+    elif args.command == "audit":
+        rows = audit_inputs(args.repo_root)
+        write_audit(rows, args.output_tsv, args.output_json)
+    elif args.command == "fly-labels":
+        summary = build_fly_fail_closed_labels(
+            args.input, args.lethal_output, args.viable_output,
+            args.excluded_output, args.audit_output,
+        )
+        write_json(args.summary, summary)
+    else:
+        write_json(args.summary, write_empty_fly_helper(args.output, args.year))
+
+
+if __name__ == "__main__":
+    main()

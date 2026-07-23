@@ -4,23 +4,30 @@ GO-enrichment analysis utilities for PhenGO-Predict.
 """
 import os
 import logging
+import json
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import roc_auc_score
 
-from .data     import load_arff_data, prepare_data
+from .data     import load_arff_data
 from .model    import create_model_sparse_optimised
-from .evaluate import compute_class_weights, find_optimal_threshold
+from .evaluate import compute_class_weights
 
 logger = logging.getLogger(__name__)
 
-try:
-    from tensorflow import keras
-except ImportError as e:
-    logger.error(f"TensorFlow import failed: {e}")
-    raise
 
+def _benjamini_hochberg(p_values):
+    """Return Benjamini-Hochberg adjusted p-values in original order."""
+    values = np.asarray(p_values, dtype=float)
+    order = np.argsort(values)
+    adjusted = np.empty(len(values), dtype=float)
+    running = 1.0
+    for reverse_rank, index in enumerate(order[::-1], 1):
+        rank = len(values) - reverse_rank + 1
+        running = min(running, values[index] * len(values) / rank)
+        adjusted[index] = min(1.0, running)
+    return adjusted
 
 def cross_validate_model(X, y, gene_names, options, n_folds=5):
     """Stratified K-fold cross-validation for robust performance estimates.
@@ -41,7 +48,13 @@ def cross_validate_model(X, y, gene_names, options, n_folds=5):
     logger.info(f"PERFORMING {n_folds}-FOLD CROSS-VALIDATION")
     logger.info("=" * 80)
 
-    skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
+    try:
+        from tensorflow import keras
+    except ImportError as exc:
+        raise RuntimeError("TensorFlow is required for neural-network CV") from exc
+
+    seed = getattr(options, "seed", 42)
+    skf = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=seed)
     cv_results = {"accuracy": [], "precision": [], "recall": [], "auc": []}
 
     for fold, (train_idx, test_idx) in enumerate(skf.split(X, y), 1):
@@ -66,7 +79,6 @@ def cross_validate_model(X, y, gene_names, options, n_folds=5):
         )
 
         y_pred_proba = model.predict(X_test_cv, verbose=0)
-        opt_thresh, _ = find_optimal_threshold(y_test_cv, y_pred_proba.flatten())
         test_results  = model.evaluate(X_test_cv, y_test_cv, verbose=0)
 
         cv_results["accuracy"].append(test_results[1])
@@ -88,7 +100,8 @@ def cross_validate_model(X, y, gene_names, options, n_folds=5):
     return cv_results
 
 
-def predict_unlabeled_genes(model, unlabeled_arff_file, output_file):
+def predict_unlabeled_genes(model, unlabeled_arff_file, output_file,
+                            feature_names=None, threshold=None, schema_file=None):
     """Apply a trained model to genes without phenotype labels.
 
     Useful for predicting essentiality of newly discovered genes or
@@ -106,19 +119,62 @@ def predict_unlabeled_genes(model, unlabeled_arff_file, output_file):
     logger.info("PREDICTING PHENOTYPES FOR UNLABELLED GENES")
     logger.info("=" * 80)
 
-    df, meta = load_arff_data(unlabeled_arff_file)
-    gene_names  = df.iloc[:, 0]
-    X_unlabeled = df.iloc[:, 1:-1].astype(float).values
-    X_unlabeled = np.nan_to_num(X_unlabeled, nan=0.0)
+    schema = {}
+    if schema_file:
+        with open(schema_file, encoding="utf-8") as handle:
+            schema = json.load(handle)
+    expected = list(feature_names or schema.get("feature_names") or
+                    getattr(model, "feature_names_in_", []))
+    threshold = float(threshold if threshold is not None else schema.get("threshold", 0.5))
+    if not 0 < threshold < 1:
+        raise ValueError("Prediction threshold must be between 0 and 1")
+    if not expected:
+        raise ValueError(
+            "An exact training feature schema is required. Pass feature_names or schema_file."
+        )
 
-    predictions_proba  = model.predict(X_unlabeled, verbose=0).flatten()
-    predictions_binary = (predictions_proba > 0.5).astype(int)
+    df, _ = load_arff_data(unlabeled_arff_file)
+    if df is None or df.empty:
+        raise ValueError(f"Could not load unlabelled ARFF: {unlabeled_arff_file}")
+    gene_names = df.iloc[:, 0].astype(str)
+    candidate = df.iloc[:, 1:].copy()
+    if candidate.columns[-1].lower() in {"class", "phenotype", "label"}:
+        candidate = candidate.iloc[:, :-1]
+    missing = sorted(set(expected) - set(candidate.columns))
+    extra = sorted(set(candidate.columns) - set(expected))
+    if missing or extra:
+        raise ValueError(
+            "Unlabelled ARFF schema differs from training schema. "
+            f"Missing: {missing[:10]}; extra: {extra[:10]}"
+        )
+    features = candidate.reindex(columns=expected)
+    try:
+        X_unlabeled = features.astype(float).values
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Unlabelled GO features must be numeric") from exc
+    if not np.isfinite(X_unlabeled).all() or not set(np.unique(X_unlabeled)) <= {0.0, 1.0}:
+        raise ValueError("Unlabelled GO features must contain only finite binary 0/1 values")
+
+    if hasattr(model, "predict_proba"):
+        classes = list(model.classes_)
+        predictions_proba = model.predict_proba(features)[:, classes.index(1)]
+    else:
+        try:
+            predictions_proba = model.predict(X_unlabeled, verbose=0).reshape(-1)
+        except TypeError:
+            predictions_proba = np.asarray(model.predict(X_unlabeled)).reshape(-1)
+    predictions_binary = (predictions_proba >= threshold).astype(int)
+    confidence = np.where(
+        predictions_proba >= threshold,
+        (predictions_proba - threshold) / max(1 - threshold, np.finfo(float).eps),
+        (threshold - predictions_proba) / max(threshold, np.finfo(float).eps),
+    )
 
     results_df = pd.DataFrame({
         "Gene_Name":          gene_names,
         "Predicted_Label":    ["lethal" if p == 1 else "viable" for p in predictions_binary],
         "Lethal_Probability": predictions_proba,
-        "Confidence":         np.abs(predictions_proba - 0.5),
+        "Confidence":         confidence,
     }).sort_values("Confidence", ascending=False)
 
     results_df.to_csv(output_file, index=False)
@@ -158,22 +214,39 @@ def analyze_go_term_enrichment_in_predictions(predictions_df, arff_file, output_
         left_on="Gene_Name", right_on=df.columns[0],
     )
 
-    correct   = merged[merged["Correct_Prediction"] == True]
-    incorrect = merged[merged["Correct_Prediction"] == False]
+    correct_mask = merged["Correct_Prediction"].astype(bool)
+    correct = merged[correct_mask]
+    incorrect = merged[~correct_mask]
+
+    from scipy.stats import fisher_exact
 
     enrichment_results = []
     for go_term in go_terms.columns:
         correct_freq   = correct[go_term].sum()   / len(correct)   if len(correct)   > 0 else 0
         incorrect_freq = incorrect[go_term].sum() / len(incorrect) if len(incorrect) > 0 else 0
+        correct_with = int(correct[go_term].sum())
+        incorrect_with = int(incorrect[go_term].sum())
+        odds_ratio, p_value = fisher_exact([
+            [correct_with, len(correct) - correct_with],
+            [incorrect_with, len(incorrect) - incorrect_with],
+        ])
         enrichment_results.append({
             "GO_Term":            go_term,
             "Correct_Frequency":  correct_freq,
             "Incorrect_Frequency": incorrect_freq,
-            "Enrichment_Ratio":   correct_freq / incorrect_freq if incorrect_freq > 0 else np.inf,
+            "Enrichment_Ratio":   (
+                (correct_with + 0.5) / (len(correct) + 1) /
+                ((incorrect_with + 0.5) / (len(incorrect) + 1))
+            ),
+            "Odds_Ratio":         odds_ratio,
+            "P_Value":            p_value,
             "Difference":         correct_freq - incorrect_freq,
         })
 
-    enrichment_df = pd.DataFrame(enrichment_results).sort_values("Enrichment_Ratio", ascending=False)
+    enrichment_df = pd.DataFrame(enrichment_results)
+    if len(enrichment_df):
+        enrichment_df["FDR"] = _benjamini_hochberg(enrichment_df["P_Value"])
+    enrichment_df = enrichment_df.sort_values(["FDR", "Enrichment_Ratio"], ascending=[True, False])
 
     output_path = os.path.join(output_dir, "go_enrichment_in_predictions.csv")
     enrichment_df.to_csv(output_path, index=False)

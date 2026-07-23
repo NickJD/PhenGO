@@ -1,764 +1,771 @@
-# PhenGO Changelog Since Last Git Commit
+# Changelog Since Last Git Commit
 
 Base commit:
 
 ```text
-d1707db Added additional ML models to Predict, better IO, user options, += data
+0c06311 Major toolkit-wide bug and logic fixes. Will be documented in future
 ```
 
-This document summarises the uncommitted source, documentation, and test changes
-made after the commit above. The changes are aimed at two related goals:
+This document describes the current uncommitted changes. They complete a
+scientific hardening pass of the dataset builder, GO feature construction,
+predictors, temporal analysis, provenance system, and version-sensitivity
+workflow.
 
-1. Correct several toolkit issues that could change biological or ML
-   interpretation.
-2. Add a new analysis workflow for testing whether ML conclusions vary with the
-   year/version of model-organism database resources used to generate PhenGO
-   ARFF files.
+The package version is now `0.3.0`. V1 datasets use schema-2 manifests; newly
+generated V2 datasets use schema 3 to add resource-availability and composite-
+snapshot context. Both remain readable, but neither should be mixed with
+unmanifested `0.2.0` publication datasets.
 
-## Executive Summary
+## Summary
 
-The largest conceptual change is that PhenGO now has a dedicated
-version-sensitivity analysis command:
+The main behavioral changes are:
 
-```bash
-phengo-version-sensitivity
-```
+1. Publication ARFF generation can now be made release-strict and hash-traceable.
+2. ARFF rows now use stable database accessions rather than mutable symbols.
+3. Conservative label policies are explicit and are now the defaults.
+4. GO parsing is relation-aware, canonicalizes alternate/obsolete IDs, and supports user-selected relations.
+5. Version-sensitivity predictions are gene-disjoint and out-of-fold, including transfer diagonals and per-gene instability.
+6. Probabilities are calibrated inside training folds, and uncertainty is calculated across repeated complete OOF predictions.
+7. A class-balanced MLP neural network now participates in the same repeated,
+   gene-disjoint version-sensitivity design as the other model families.
+8. Temporal GO enrichment now has exact tests, finite corrected effect sizes, and FDR correction.
+9. Destructive output handling, malformed ARFFs, duplicate records, and schema mismatches now fail explicitly.
+10. A manuscript-ready workflow and limitations section document what code cannot resolve biologically.
+11. Release-derived, paired gene-set, and agreement label designs are now separate and auditable.
+12. Publication analysis now enforces identical source code, environments, policies, folds, and calibration feasibility across snapshots.
+13. V2 adds fail-closed Fly compound parsing, corrected Worm lethal roots,
+    alternative MOD and historical mouse inputs, explicit archive-availability
+    context, interval-aware temporal results, and a verified unified output.
 
-This command accepts multiple ARFF files representing different years/releases
-for the same organism and generates within-year CV results, train-year/test-year
-transfer matrices, source-dataset drift summaries, controlled matched-gene and
-matched-feature panels, prediction-instability tables, feature-rank overlap
-tables, and a generated Markdown report.
+These changes alter row identifiers, labels, GO features, and provenance.
+Publication ARFF files must be regenerated; legacy and regenerated ARFFs should
+not be mixed in one analysis.
 
-The most important correctness fix is the phenotype label mapping in
-PhenGO-Predict. Previously, sklearn's alphabetical `LabelEncoder` mapped
-`lethal` to `0` and `viable` to `1`, while the prediction code treated class `1`
-as the positive/essential class. The new `PhenotypeLabelEncoder` makes the
-mapping explicit:
+## Core Dataset Builder
+
+### Explicit target policies
+
+File: `src/PhenGO/core/PhenGO.py`
+
+New options:
 
 ```text
-viable -> 0
-lethal -> 1
+-mixed_label_policy lethal_wins|exclude|error
+-nonlethal_policy observed_viable|explicit_only
+-ambiguous_label_policy exclude|viable
 ```
 
-Several ARFF and GO handling fixes were also added so identifiers containing
-commas are parsed safely, GO ancestor terms are preserved consistently, mouse
-MGI reports are joined more reliably, and output directories are no longer
-silently deleted unless `-overwrite` is supplied.
-
-## Version And Packaging Changes
-
-Files changed:
-
-- `setup.cfg`
-- `README.md`
-- `src/PhenGO/constants.py`
-
-Changes:
-
-- Package version changed from `0.1.2` to `0.2.0`.
-- `python_requires` changed from `>=3.6` to `>=3.10`.
-- Optional dependency groups were added:
-  - `predict`: NumPy, pandas, scikit-learn, matplotlib.
-  - `nn`: TensorFlow.
-  - `reports`: NumPy, pandas, scikit-learn, matplotlib, seaborn.
-  - `all`: all optional dependencies.
-- New console scripts were added:
-  - `phengo-version-sensitivity`
-  - `version-sensitivity`
-- README installation guidance now documents optional extras:
-
-```bash
-pip install "phengo[predict,reports]"
-```
-
-- README usage text now reflects `PhenGO v0.2.0`.
-- README now documents the new `-overwrite` option for the core PhenGO command.
-- README now includes a Version-Sensitivity Analysis section with example usage.
-- Default bundled data paths in `constants.py` now use `importlib.resources`
-  instead of fragile relative paths such as `../data/...`.
-
-Why this matters:
-
-- Installed packages can now find bundled default data files reliably.
-- Users can install only the dependencies they need.
-- TensorFlow is no longer implicitly required for users who only need sklearn
-  models or reporting utilities.
-
-## Core PhenGO Pipeline Changes
-
-Files changed:
-
-- `src/PhenGO/core/PhenGO.py`
-- `src/PhenGO/core/go_handling.py`
-- `src/PhenGO/core/phenotype_handling.py`
-
-### GO Ancestor And Filtering Fixes
-
-The core pipeline now keeps a clearer distinction between:
-
-- direct GO terms from the source annotation file, stored as `go_list`
-- expanded GO terms after ancestor traversal, stored as `expanded_go_list`
-- binary ARFF feature vector, stored as `bin_vec`
-
-`assign_go_to_vector()` now stores `expanded_go_list` for each gene. This fixes
-downstream ambiguity where some outputs used only direct GO terms even though
-the ARFF feature vector contained ancestor-expanded GO features.
-
-`removed_unused_gos()` now derives used GO terms from `bin_vec` or
-`expanded_go_list`, rather than only the direct `go_list`. This prevents valid
-ancestor-derived features from being removed when `-no_filter_unused_gos` is not
-used.
-
-`get_o_rep_output()` and `write_func_output()` now use expanded GO terms when
-available, keeping enrichment/FUNC-style outputs consistent with the ARFF
-feature space.
-
-Why this matters:
-
-- The ARFF matrix, enrichment outputs, and GO feature filtering now describe the
-  same expanded GO feature universe.
-- Ancestor GO terms should no longer disappear from filtered outputs simply
-  because they were not direct annotations.
-
-### Safer ARFF Writing
-
-`write_arff_output()` now writes data rows using Python's `csv.writer`.
-
-Why this matters:
-
-- Gene identifiers containing commas or quote-sensitive characters are emitted
-  safely.
-- Downstream CSV-aware parsers can round-trip those identifiers correctly.
-
-### Safer Output Directory Handling
-
-The core `PhenGO` command now has an explicit:
-
-```bash
--overwrite
-```
-
-If an output directory already contains non-log files, PhenGO now refuses to
-delete them unless `-overwrite` is supplied.
-
-Why this matters:
-
-- Previous behaviour could remove existing output contents unexpectedly.
-- Runs are now safer and more reproducible.
-
-### Mouse Parser And Join Fixes
-
-Mouse phenotype parsing now supports both common MGI report layouts:
-
-- `MGI_GenePheno`
-- `MGI_PhenoGenoMP`
-
-The mouse parser now prefers MGI marker accession IDs where available. Mouse GO
-joining now tries both the MGI accession and gene symbol when matching GAF rows
-to phenotype-derived gene records.
-
-The transgene/multi-marker filter is now applied to the accession field used for
-matching.
-
-Why this matters:
-
-- MGI phenotype files and MGI GAF files do not always line up cleanly by symbol.
-- Using marker accessions improves the join between phenotype labels and GO
-  annotations.
-- Mouse ARFF files generated before this fix may have missed valid GO joins.
-
-### Worm Parser Robustness
-
-The worm phenotype parser now tolerates rows without the expected evidence-code
-column.
-
-Why this matters:
-
-- Historical or partially normalised WormBase files are less likely to fail
-  during parsing.
-
-## PhenGO-Predict Changes
-
-Files changed:
-
-- `src/PhenGO/predict/PhenGO-Predict.py`
-- `src/PhenGO/predict/cli.py`
-- `src/PhenGO/predict/__init__.py`
-- `src/PhenGO/predict/data.py`
-- `src/PhenGO/predict/evaluate.py`
-- `src/PhenGO/predict/sklearn_models.py`
-- `src/PhenGO/predict/visualise.py`
-
-### Importable CLI Entry Point
-
-A new importable wrapper was added:
+New defaults:
 
 ```text
-src/PhenGO/predict/cli.py
+mixed observations       exclude
+nonlethal observations   require explicit viability
+partial/semi-lethal      exclude
+fly multi-gene records   filter
 ```
 
-It loads the legacy `PhenGO-Predict.py` script through `importlib` and exposes a
-standard `main()` function.
+`-filter_mixed_terms` remains as a deprecated alias for
+`-mixed_label_policy exclude`. `-allow_multigenes` permits the previous fly
+behavior explicitly.
 
-Why this matters:
+### Explicit label-source designs
 
-- Console-script entry points can call the predictor reliably even though the
-  legacy file name contains a hyphen.
-
-### Lazy Imports And Optional TensorFlow
-
-`PhenGO-Predict.py`, `evaluate.py`, and `predict/__init__.py` were changed to
-avoid importing TensorFlow, NumPy, sklearn, or other heavy ML dependencies until
-they are actually needed.
-
-Why this matters:
-
-- sklearn-only workflows do not fail just because TensorFlow is missing.
-- CLI help and lightweight imports work in more environments.
-- The package API avoids eager loading of heavy dependencies.
-
-### Explicit Lethal-Positive Label Encoder
-
-`data.py` now defines:
-
-```python
-PhenotypeLabelEncoder
-```
-
-Supported lethal/positive aliases include:
-
-- `lethal`
-- `inviable`
-- `essential`
-
-Supported viable/negative aliases include:
-
-- `viable`
-- `non-essential`
-- `nonessential`
-- `non_essential`
-
-The explicit class order is:
+New options:
 
 ```text
-["viable", "lethal"]
+-label_source release_records|gene_sets|agreement
+-lethal_gene_set
+-viable_gene_set
 ```
 
-Why this matters:
+`release_records` is the default and computes labels from each supplied MOD
+phenotype release. `gene_sets` uses paired lethal and viable collections as the
+complete target definition. `agreement` retains only stable genes for which the
+release-derived and collection-derived labels agree. Unlisted genes remain
+unknown rather than being inferred viable, conflicting identifiers are errors,
+and paired files use one authoritative identifier per row. The first column is
+the stable accession; the second is a display-symbol fallback only when the
+stable-accession cell is blank.
 
-- Metrics, thresholds, ROC/AUPRC calculations, predicted probabilities, and
-  positive-class interpretation now align with the intended biological meaning:
-  lethal/essential is class `1`.
+Every run writes `label_source_audit.tsv` with release and collection labels and
+an explicit retained/disagreement/source-only outcome. The manifest records the
+label source, both collection hashes, source/join counts, and audit counts. The
+bundled dated fly lethal collection is available with
+`-lethal_gene_set bundled` outside strict mode. The old `-fly_lethal_genes`
+lethal-only override remains for exploratory compatibility but is deprecated
+and prohibited in strict publication snapshots.
 
-### CSV-Aware ARFF Loading
+### Phenotype parser corrections
 
-`load_arff_data()` now uses `csv.reader` for data rows instead of manual comma
-splitting.
+File: `src/PhenGO/core/phenotype_handling.py`
 
-Why this matters:
+- Centralised repeated-observation resolution.
+- Worm `NOT` and evidence fields are tokenized exactly.
+- Worm rows excluded by qualifier/evidence policy are skipped; they are no
+  longer converted into viable examples.
+- Worm phenotype terms are matched as exact tokens rather than substrings.
+- Worm lethal-gene-list mode respects `nonlethal_policy`.
+- Worm term mode can consume `-worm_viable_phenotypes`; worm gene-list mode can
+  consume `-worm_viable_genes`.
+- Fish semi-lethal and semi-viable records are excluded by default.
+- Fish lethal/dead and viable/alive terms use word-boundary matching.
+- Fly partial lethality follows the ambiguous-label policy.
+- Yeast, fly, fish, worm, and mouse nonlethal records all follow the same
+  explicit policy interface.
+- Mouse can consume `-mouse_viable_phenotypes` for explicit negative labels.
+- Core generation stops unless both viable and lethal classes remain.
+- Mixed labels can be excluded, resolved with lethal priority for legacy
+  reproduction, or treated as an error.
 
-- ARFF rows with quoted gene identifiers containing commas are parsed correctly.
+### Stable gene identifiers
 
-### Safer Prediction Output Directories
+File: `src/PhenGO/core/go_handling.py`
 
-`PhenGO-Predict.py` now has:
+- GAF DB Object ID is now the canonical ARFF row key.
+- GAF joins index the complete filtered annotation file before assigning labels.
+- Stable accessions take precedence over canonical symbols; non-stable
+  identifiers are accepted only when they resolve to exactly one stable GAF ID.
+- Strict snapshots disable historical-synonym fallback. Exploratory runs may use
+  a synonym only when it resolves uniquely and no stronger identifier matches.
+- Output records retain the current gene symbol for a separate identifier map.
+- Contradictory labels at the strongest identifier priority are excluded rather
+  than resolved by lethal priority. Lower-priority contradictions are ignored
+  and audited without overriding the stronger assignment.
+- Fish, worm, and yeast phenotype parsers now retain their source ZFIN,
+  WormBase, and SGD stable accessions instead of discarding them for symbols.
+- Release-matched fly symbols are translated to unique FBgn accessions before
+  the GAF join; ambiguous assignment symbols are excluded.
+- `identifier_join_audit.tsv` records unmatched identifiers, one-to-many symbol
+  mappings, contradictory labels, and precedence decisions. Counts and policy
+  are included in `PhenGO_manifest.json`.
+- Exact `NOT` qualifier filtering replaces substring matching.
+- User-selected GAF evidence codes are applied consistently across organisms.
+- Duplicate GO annotations per gene are removed.
+- Deprecated fly lethal-only overrides are applied when requested using one
+  authoritative identifier per input row, but paired label sources are the
+  publication interface.
+- Fly assignment generation excludes any release symbol associated with more
+  than one FBgn accession and writes the rejected symbol-to-ID mappings to an
+  `excluded.tsv` sidecar.
+- `gene_identifiers.tsv` records stable accession to display-symbol mappings.
 
-```bash
--overwrite
-```
+An all-year primary-input audit confirmed stable source identifiers on every
+eligible fish, worm, and yeast row and all IMPC rows from 2016 onward. The 2015
+IMPC source contains symbols only; 1,208 of 1,212 labels resolve through unique
+exact 2015 GAF canonical symbols, four remain unmatched, and none use synonyms.
+Later FlyBase GAFs contain a small number of one-to-many canonical symbols;
+these are now explicitly excluded during release-assignment generation.
 
-The predictor refuses to delete a non-empty output directory unless this flag is
-supplied.
+### Strict snapshot provenance
 
-### Threshold Boundary Fix
-
-Neural-network binary predictions now use:
-
-```python
-y_pred_proba_test >= opt_threshold
-```
-
-instead of:
-
-```python
-y_pred_proba_test > opt_threshold
-```
-
-Why this matters:
-
-- Predictions exactly equal to the selected threshold are handled consistently
-  as positive.
-
-### Model Reproducibility And Class Imbalance
-
-`sklearn_models.py` now uses `options.random_state` or `options.seed` where
-available instead of a hard-coded seed of `42`.
-
-Gradient Boosting now receives balanced `sample_weight` during fitting. Before
-this change, `dt`, `rf`, `lr`, and `svm` used class balancing, but `gb` did not.
-
-Why this matters:
-
-- Model comparisons are less confounded by class imbalance.
-- Repeated analyses can vary seeds in a controlled way.
-
-### Prediction Output Columns
-
-`evaluate_and_analyse_predictions()` now adds:
+Files:
 
 ```text
-probability_lethal
+src/PhenGO/provenance.py
+src/PhenGO/core/PhenGO.py
 ```
 
-as a clear alias for the positive-class prediction probability.
-
-Why this matters:
-
-- Downstream reports and version-sensitivity analyses can refer to the lethal
-  probability unambiguously.
-
-### Feature Importance Plot Fix
-
-`visualise.py` now uses `nlargest()` rather than `nsmallest()` for top feature
-importance plots.
-
-Why this matters:
-
-- Feature-importance plots now show the most important features, not the least
-  important ones.
-
-## New Version-Sensitivity Analysis Workflow
-
-Files added:
-
-- `src/PhenGO/predict/version_sensitivity.py`
-- `docs/version_sensitivity_workflow.md`
-
-The new command is:
-
-```bash
-phengo-version-sensitivity
-```
-
-Alias:
-
-```bash
-version-sensitivity
-```
-
-The command accepts either:
-
-```bash
--arff_files file1.arff file2.arff ...
-```
-
-or:
-
-```bash
--input_dir parent_directory
-```
-
-When `-input_dir` is used, the command discovers ARFF files from direct child
-directories containing `*_PhenGO.arff`. If no child directories match, it falls
-back to direct `*.arff` files in the input directory.
-
-### Supported Models
-
-Main models:
-
-- `lr`
-- `rf`
-- `gb`
-- `dt`
-
-Optional model:
-
-- `svm`
-
-Convenience value:
-
-- `all`
-
-The default model set is:
+New core options:
 
 ```text
-lr rf gb dt
+-snapshot_id
+-phenotype_release
+-go_annotation_release
+-go_ontology_release
+-phenotype_ontology_release
+-retrieval_date
+-strict_snapshot
 ```
 
-### Analysis Panels
+`-strict_snapshot` requires complete relevant release metadata and explicit,
+release-matched helper resources for fly, worm, and mouse. `retrieval_date`
+must use `YYYY-MM-DD`. Bundled current helper files emit warnings outside
+strict mode and cannot satisfy a strict historical run merely through a
+`default` alias.
 
-The command runs four panel types:
+New runs write schema-3 `PhenGO_manifest.json` (schema-2 V1 manifests remain
+readable), containing:
 
-| Panel | Purpose |
-| --- | --- |
-| `full` | Uses the union of train/test GO features and each dataset's available genes. This captures the full practical effect of database-version changes. |
-| `matched_features` | Restricts every dataset to GO features shared by all datasets. This controls for GO feature-space churn. |
-| `matched_genes` | Restricts each train/test pair to shared genes. This controls for gene coverage churn. |
-| `matched_both` | Restricts all datasets to genes and GO features shared by all datasets. This is the strongest control panel. |
+- tool version and git commit;
+- dirty-worktree status and a hash of the complete Python source tree;
+- command line;
+- Python executable, platform, architecture, and dependency versions;
+- release identifiers and retrieval date;
+- resource availability, retrieval route, and composite-snapshot semantics;
+- absolute input paths, sizes, modification times, and SHA-256 hashes;
+- label and GO policies;
+- output hashes;
+- gene, class, and feature counts.
 
-### Output Files
+### Output safety
 
-The command writes:
+File: `src/PhenGO/provenance.py`
+
+- Root, home, current working directory, and input-containing output paths are rejected.
+- Non-empty output directories require `-overwrite`.
+- Core log files can be preserved while other output is replaced.
+- Auxiliary inputs are protected as well as the three primary inputs.
+- Empty post-filter gene cohorts or GO feature sets now stop the run rather than writing unusable ARFFs.
+- `PhenGO --print-defaults` works without supplying the otherwise required run arguments.
+- Publication `--resume` now fingerprints source, dependencies, pipeline and
+  ledger content, input hashes, and analysis parameters. Any change forces a
+  complete regeneration instead of mixing stale and current outputs.
+
+## GO Ontology And Features
+
+### Relation-aware OBO parser
+
+File: `src/PhenGO/core/obo_to_graph.py`
+
+The former line-oriented GO parser was replaced by a stanza-aware parser. It
+supports:
 
 ```text
-dataset_drift.csv
-pairwise_drift.csv
-within_year_cv.csv
-within_year_cv_summary.csv
+is_a
+part_of
+regulates
+positively_regulates
+negatively_regulates
+occurs_in
+capable_of
+capable_of_part_of
+```
+
+`is_a + part_of` is the default biological grouping policy:
+
+```bash
+-go_relations is_a part_of
+```
+
+The graph records relation-specific parents and children in
+`GO_Children&Parents.json`. Alternate IDs map to one canonical feature rather
+than becoming duplicate features. Obsolete terms are followed through
+unambiguous `replaced_by` chains; unresolved or ambiguous obsolete terms are
+removed and reported. Duplicate alternate-ID mappings are errors.
+
+### GO controls
+
+New options:
+
+```text
+-go_namespaces biological_process molecular_function cellular_component
+-go_propagation ancestors|direct
+-exclude_go_roots
+-include_go_roots
+-go_evidence_codes ...
+-exclude_go_evidence_codes ...
+-min_go_gene_count
+-max_go_gene_fraction
+```
+
+Defaults are ancestor propagation over `is_a + part_of`, exclusion of the three
+canonical GO roots, minimum occurrence in two genes, and maximum prevalence of 99%.
+Include/exclude evidence-code contradictions are rejected.
+
+Selected relation graphs must be acyclic. Cross-namespace propagation is
+rejected by default, which protects publication runs from accidentally using
+unsafe edges from a full ontology in place of release-matched `go-basic.obo`.
+`-allow_cross_namespace_go_edges` is an explicit sensitivity-analysis override.
+The OBO format, ontology, and data-version header fields are stored in the
+manifest when present.
+
+### Feature consistency
+
+File: `src/PhenGO/core/PhenGO.py`
+
+- Direct annotations, expanded annotations, and binary vectors remain distinct.
+- GO validation canonicalizes alternate IDs and obsolete replacements before vectorization.
+- Genes left without a valid vector are removed even when unused-feature filtering is disabled.
+- Unused and prevalence filters rebuild every gene vector without discarding identifier metadata.
+- ARFF and enrichment outputs use the same expanded feature universe.
+- ARFF writing canonicalizes booleans and other valid binary scalars to the
+  declared integer `0/1` domain and rejects invalid vector lengths, values,
+  labels, or duplicate feature declarations.
+- Root exclusion now targets the three canonical GO roots; it does not remove every node lacking a selected-relation parent.
+
+### GO mapping utility
+
+The public `phengo-tools go-map` parser-state bug that could yield an empty
+ontology has been fixed. It now reads plain or gzipped OBO files, rejects
+duplicate term stanzas and alternate IDs mapped to multiple terms, canonicalizes
+alternate IDs, follows only a single direct active `replaced_by` target, and
+reports `exact`, `alt_id`, `obsolete_replaced`, `obsolete_unresolved`, or
+`missing` for every requested GO ID. Ambiguous obsolete replacements remain
+unmapped rather than being guessed.
+
+## Version-Sensitivity ML
+
+File: `src/PhenGO/predict/version_sensitivity.py`
+
+### Comparable neural-network evaluation
+
+- `nn` now selects scikit-learn `MLPClassifier` in the version-sensitivity
+  command and is included by `-models all`.
+- The MLP uses the same outer folds, year-to-year transfer cells, feature and
+  cohort panels, random-seed policy, balanced training weights, nested
+  calibration, lethal-positive mapping, threshold, and metrics as the other
+  classifiers.
+- Architecture, L2 penalty, batch size, learning rate, maximum iterations,
+  early-stopping validation fraction, and patience are CLI parameters and are
+  captured in `version_sensitivity_manifest.json`.
+- Fold and transfer outputs record convergence-warning counts and maximum
+  optimizer iterations. Publication runs should be repeated globally if the
+  selected iteration limit does not converge.
+- Cross-year models now use only the training release's GO vocabulary. This
+  prevents test-only terms from contributing untrained random MLP weights or
+  altering random-forest feature sampling.
+- One fixed gene-ID fold partition is reused across all transfer directions in
+  each repeat. A fitted train-year/fold model can therefore score every test
+  year while preserving gene-disjoint evaluation, substantially reducing the
+  number of redundant fits.
+- `scikit-learn>=1.7` is required so MLP training can consume class-balanced
+  sample weights.
+- The existing TensorFlow network remains available only in the
+  single-snapshot runner and is described as a supplementary implementation
+  sensitivity analysis.
+
+### Manifest enforcement
+
+- Strict `PhenGO_manifest.json` files are required by default.
+- ARFF hashes are checked against manifests.
+- All datasets must represent one organism and have unique snapshot IDs.
+- Release metadata requirements account for organism-specific auxiliary resources.
+- `-allow_missing_manifests` is available only for explicit exploratory legacy analysis.
+- `version_sensitivity_manifest.json` records the analysis command,
+  dependencies, input hashes, source snapshot IDs, and evaluation design.
+- Schema-2 publication manifests must have identical tool versions,
+  source-tree hashes, dependency environments, label/GO policies, parser
+  settings, and feature filters across snapshots.
+
+### Cohorts and duplicate validation
+
+- Duplicate GO attributes are errors.
+- Missing, non-numeric, non-binary, or conflicting duplicate gene rows are errors.
+- Exact duplicate rows are deduplicated with a warning.
+- `matched_genes` now means genes shared across every snapshot, not a different
+  pairwise cohort for every transfer cell.
+- Matched panels reuse fixed gene-index partitions across releases.
+- Empty matched feature panels are skipped explicitly rather than crashing.
+
+### Out-of-fold evaluation
+
+- Within-snapshot summaries are computed from complete OOF predictions for each repeat.
+- Cross-snapshot transfer removes each scored test gene from that fold's training data.
+- Diagonal transfer cells are genuine OOF estimates, not resubstitution scores.
+- Per-gene prediction-instability probabilities are fixed-fold, gene-disjoint OOF scores.
+- Output rows state the evaluation design explicitly.
+
+### Calibration, metrics, and uncertainty
+
+New options:
+
+```text
+-calibration none|sigmoid|isotonic
+-calibration_cv
+-cv_repeats
+-n_jobs
+-seed
+```
+
+Sigmoid calibration is the default and is fitted only inside outer training
+data. Reported metrics include ROC-AUC, average precision, balanced accuracy,
+MCC, F1-lethal, macro F1, lethal precision/recall, accuracy, Brier score,
+prevalence, and sample counts.
+
+Fold metrics remain available for diagnostics, but summaries first combine all
+OOF predictions within a repeat. Standard deviations and Student-t 95%
+interval half-widths are calculated across repeats. Gradient boosting receives
+balanced sample weights. Internal model parallelism defaults to one worker for
+portable deterministic execution.
+
+Before fitting, `evaluation_preflight.csv` verifies every selected panel and
+transfer direction can use the requested folds and calibration CV without
+class-deficient training data. Publication mode fails rather than silently
+reducing fold counts or omitting cells. `-allow_incomplete_evaluation` retains
+adaptive behavior for explicitly exploratory analyses.
+
+### Transfer outputs
+
+New or changed outputs:
+
+```text
 cross_year_transfer.csv
+cross_year_transfer_summary.csv
 transfer_matrices/
-previous_year_label_baseline.csv
-prediction_instability.csv
-prediction_instability_summary.csv
-feature_rank_overlap.csv
-VERSION_SENSITIVITY_REPORT.md
-version_sensitivity.log
 ```
 
-### Dataset Drift Outputs
+The raw file contains repeat-level OOF estimates. The summary and matrices use
+means across repeats and include variability/interval columns.
 
-`dataset_drift.csv` reports per-snapshot counts and structure:
+### Feature-importance stability
 
-- number of genes
-- number of GO features
-- number of active GO features
-- lethal and viable counts
-- lethal prevalence
-- mean and median GO terms per gene
-- sparsity
-
-`pairwise_drift.csv` reports pairwise snapshot differences:
-
-- shared genes
-- gene-set Jaccard similarity
-- shared GO features
-- GO-feature Jaccard similarity
-- label churn among common genes
-
-### Within-Year CV Outputs
-
-`within_year_cv.csv` contains fold-level repeated stratified CV results for each
-dataset, model, and panel.
-
-`within_year_cv_summary.csv` contains mean and standard deviation summaries for
-the same metrics.
-
-### Cross-Year Transfer Outputs
-
-`cross_year_transfer.csv` contains train-year to test-year results for every
-dataset pair, model, and panel.
-
-`transfer_matrices/` contains matrix-form CSVs for key metrics, ready for
-heatmaps.
-
-Metrics include:
-
-- ROC-AUC
-- average precision / AUPRC
-- balanced accuracy
-- MCC
-- F1 lethal
-- F1 macro
-- lethal precision
-- lethal recall
-- accuracy
-- Brier score
-- lethal prevalence
-- sample counts
-
-### Baselines
-
-The analysis includes:
-
-- `baseline_majority`
-- `baseline_prior`
-- `baseline_stratified_random`
-- `previous_year_labels`
-
-The first three are included in CV and transfer analyses. The previous-year
-label baseline is written to `previous_year_label_baseline.csv`.
-
-### Prediction Instability
-
-`prediction_instability.csv` reports per-gene probability variation across
-years in the `matched_both` panel.
-
-Important fields:
-
-- `sd_probability_lethal`
-- `range_probability_lethal`
-- `prediction_flip`
-- `label_flip`
-- `min_probability_lethal`
-- `max_probability_lethal`
-
-`prediction_instability_summary.csv` reports model-level instability:
-
-- mean and median per-gene probability SD
-- mean per-gene probability range
-- prediction flip rate
-- label flip rate
-
-### Feature-Rank Overlap
-
-`feature_rank_overlap.csv` reports top-k GO feature overlap across years for
-models with native importance scores:
-
-- `lr`
-- `dt`
-- `rf`
-- `gb`
-
-Low overlap suggests that the GO terms highlighted by the models are not stable
-across database versions.
-
-## Script And Report Parser Fixes
-
-Files changed:
-
-- `src/PhenGO/scripts/GO_Compare.py`
-- `src/PhenGO/scripts/GO_temporal_analysis.py`
-- `src/PhenGO/scripts/arff_validator.py`
-- `src/PhenGO/scripts/compare_arff_genes.py`
-- `src/PhenGO/scripts/report_generator.py`
-
-Changes:
-
-- ARFF data-row parsing now uses `csv.reader` in multiple scripts.
-- Gene identifiers containing commas are now handled consistently.
-- `arff_validator.py` now checks whether the input ARFF exists before running.
-- `report_generator.py` now recognises both:
-  - `report.txt`
-  - `final_report.txt`
-- Report ARFF stats parsing is now CSV-aware.
-
-Why this matters:
-
-- The ARFF ecosystem is now consistent across generation, validation,
-  comparison, temporal analysis, prediction, and reporting.
-
-## Tests Added
-
-Files added:
-
-- `tests/test_predict_labels.py`
-- `tests/test_core_go_filtering.py`
-- `tests/test_arff_io.py`
-- `tests/test_mouse_parser.py`
-- `tests/test_version_sensitivity.py`
-
-Coverage added:
-
-- lethal/viable label polarity:
-  - confirms `viable -> 0`
-  - confirms `lethal`, `inviable`, and `essential -> 1`
-- GO filtering:
-  - confirms ancestor-expanded GO terms are preserved when unused GO features
-    are removed
-- ARFF IO:
-  - confirms a gene name containing commas can be written and parsed correctly
-- mouse parsing:
-  - confirms `MGI_GenePheno` marker accessions are parsed
-  - confirms `MGI_PhenoGenoMP` marker accessions are parsed
-  - confirms mouse GO joins prefer marker accession IDs
-- version-sensitivity helpers:
-  - confirms `all` model expansion and deduplication
-  - confirms natural sorting of year-like dataset names
-  - confirms ARFF auto-discovery from output subdirectories
-
-## Recommended Use For The Research Article
-
-### 1. Regenerate ARFF Files
-
-For publication results, regenerate ARFF files from the raw model-organism
-database snapshots using the corrected PhenGO core pipeline.
-
-This is important because old ARFFs may have been affected by:
-
-- lethal/viable positive-class interpretation during prediction
-- GO ancestor filtering issues
-- mouse MGI identifier matching issues
-- comma-sensitive ARFF parsing/writing issues
-- older output/report inconsistencies
-
-Example:
-
-```bash
-PhenGO \
-  -species worm \
-  -phenotype_file data/worm/phenotype_data/2017/phenotype_association.WS257.wb.clean.col7.gz \
-  -gene_association_file data/worm/gene_association/go_archive/2017/wb.gaf.gz \
-  -go_obo_file data/go/2017/go_2017-01-01.obo.gz \
-  -output_dir results/worm_2017 \
-  -overwrite
-```
-
-Repeat this for each organism/year or organism/release.
-
-### 2. Run One Version-Sensitivity Analysis Per Organism
-
-Example:
-
-```bash
-phengo-version-sensitivity \
-  -arff_files \
-    results/worm_2017/worm_PhenGO.arff \
-    results/worm_2021/worm_PhenGO.arff \
-    results/worm_2025/worm_PhenGO.arff \
-  -dataset_names 2017 2021 2025 \
-  -models lr rf gb dt \
-  -cv_folds 5 \
-  -cv_repeats 5 \
-  -output_dir paper_outputs/worm_version_sensitivity \
-  -overwrite
-```
-
-Recommended main-manuscript models:
+Native importance is now estimated across stratified bootstrap samples rather
+than one full-data fit. New output:
 
 ```text
-lr rf gb dt
+feature_importance_stability.csv
 ```
 
-Recommended supplementary model:
+It reports mean importance, importance SD, top-k selection frequency, consensus
+rank, and completed bootstrap count. `feature_rank_overlap.csv` uses consensus
+top-k sets.
+
+## General Predictor
+
+Files:
 
 ```text
-svm
+src/PhenGO/predict/PhenGO-Predict.py
+src/PhenGO/predict/compare.py
+src/PhenGO/predict/data.py
+src/PhenGO/predict/sklearn_models.py
+src/PhenGO/predict/utils.py
 ```
 
-### 3. Structure Results Around The Version Question
+### Safer model defaults and probability handling
 
-Suggested order:
+- Logistic regression replaces the neural network as the default model.
+- Sklearn probabilities use training-fold calibration by default.
+- Gradient boosting remains class-balanced through sample weights.
+- Neural-network random seeds are explicit and deterministic operations are requested when available.
+- Neural-network early stopping and threshold selection use a held-out validation subset.
+- The test set is no longer used for threshold selection.
+- Single-model output adds average precision, balanced accuracy, MCC, and Brier score.
 
-1. Use `dataset_drift.csv` and `pairwise_drift.csv` to show that the source
-   resources changed between years.
-2. Use `within_year_cv_summary.csv` to show how ordinary model performance
-   changes inside each snapshot.
-3. Use `cross_year_transfer.csv` and `transfer_matrices/` as the central
-   evidence for year/version sensitivity.
-4. Compare `full`, `matched_features`, `matched_genes`, and `matched_both`
-   panels to identify whether instability is driven by gene churn, GO-feature
-   churn, label churn, annotation churn, or all of these.
-5. Use `prediction_instability.csv` to show gene-level changes in model output.
-6. Use `feature_rank_overlap.csv` to show whether the apparent GO signal learned
-   by the model is stable across years.
+### Reusable model artifacts
 
-### 4. Preferred Metrics
+Sklearn models are saved as `model.joblib`. Every saved sklearn and neural model
+has `model_schema.json`, recording:
 
-Because lethal genes are often the minority class, prioritise:
+- exact ordered GO feature names;
+- `viable = 0`, `lethal = 1`;
+- lethal as the positive class;
+- decision threshold;
+- calibration policy where applicable.
 
-- AUPRC / average precision
-- MCC
-- balanced accuracy
-- F1 lethal
-- lethal recall
-- lethal precision
+Unlabelled prediction now requires this schema or an explicit feature list,
+aligns columns by name, detects whether a class column is actually present,
+and rejects missing/extra/non-binary features. It no longer drops the final GO
+column unconditionally.
 
-Report class prevalence alongside performance metrics so the reader can see
-whether apparent performance changes are partly caused by label distribution
-changes.
+### ARFF validation
 
-## Verification Performed
+- Quoted ARFF attribute names are parsed correctly.
+- Malformed rows are errors rather than silently skipped.
+- Duplicate attributes are errors.
+- Missing/non-finite values are errors rather than converted to zero.
+- GO values must be binary.
+- Conflicting duplicate gene rows are errors; exact duplicates are removed.
 
-The following checks were run with:
+### Multi-dataset comparison
+
+Comparison mode now trains every requested model instead of always invoking
+TensorFlow. It writes `comparison_metrics.csv`, model-specific predictions and
+importance files, a performance plot, top-k importance overlap, and an outer
+join differential-importance table that retains features present in only one
+dataset.
+
+## Temporal GO Analysis And ARFF Comparison
+
+Files:
 
 ```text
-/Users/nicholas/anaconda3/envs/PhenGO/bin/python
+src/PhenGO/scripts/GO_temporal_analysis.py
+src/PhenGO/scripts/GO_Compare.py
+src/PhenGO/scripts/compare_arff_genes.py
 ```
 
-Unit tests:
+Temporal GO enrichment now uses:
 
-```bash
-PYTHONPATH=src /Users/nicholas/anaconda3/envs/PhenGO/bin/python -m unittest discover -s tests
-```
+- Fisher's exact test;
+- Haldane-Anscombe corrected finite enrichment/depletion ratios;
+- Benjamini-Hochberg FDR correction;
+- `--max-fdr` for ranked timelines;
+- `*_enrichment_statistics.csv` for all tested terms.
 
-Result:
+Infinite one-class ratios are no longer silently discarded. Temporal ARFF
+loading also rejects conflicting duplicate genes. Output replacement requires
+`-overwrite` and uses protected-path checks.
+Strict source manifests and ARFF hashes are required by default. The command
+writes `temporal_analysis_manifest.json` with source snapshot IDs, software and
+source-tree state, input hashes, configuration, and output hashes.
+Temporal analysis uses the same manifested source, environment, and policy
+contract as version-sensitivity analysis, so mixed-generation datasets are
+rejected consistently.
+
+The two-dataset `GO_Compare` workflow now uses the same corrected finite effect
+ratios, Fisher tests, and Benjamini-Hochberg FDR values. Enrichment-ranked terms
+respect `--max-fdr`, malformed or conflicting ARFF records are rejected, and a
+protected output directory with explicit overwrite behavior is required.
+
+`compare-arff` is now symmetric, reports `MISSING_IN_A` as well as
+`MISSING_IN_B`, writes one row per gene with combined statuses, and rejects
+conflicting duplicate records. A gene with both a label and GO mismatch no
+longer appears twice.
+
+## Dependencies
+
+File: `setup.cfg`
+
+- `scipy` is now explicit in `predict`, `reports`, and `all` extras because the
+  statistical workflows use it directly.
+- `scikit-learn>=1.7` is required in those extras because comparable MLP
+  training uses class-balanced sample weights.
+- A `test` extra provides `pytest`.
+- `networkx` remains the core ontology graph dependency.
+
+The requested ARM64 environment used for implementation and verification was:
 
 ```text
-Ran 9 tests
-OK
+/Users/nicholas/miniconda3/envs/PhenGO
 ```
 
-Version-sensitivity CLI help:
+`networkx 3.6.1` and `pytest 9.1.1` were installed there. The environment uses
+ARM64 Python 3.12 and its existing NumPy, pandas, SciPy, scikit-learn, and
+TensorFlow packages.
 
-```bash
-PYTHONPATH=src /Users/nicholas/anaconda3/envs/PhenGO/bin/python -m PhenGO.predict.version_sensitivity -h
-```
+The current checkout was installed into that environment as editable
+`PhenGO 0.3.0`, and the installed `PhenGO`, `phengo-version-sensitivity`, and
+`temporal-analysis` entry points were exercised successfully.
 
-Result:
+## Documentation
+
+Files:
 
 ```text
-usage: phengo-version-sensitivity ...
+README.md
+docs/version_sensitivity_workflow.md
+docs/manuscript_limitations.md
+docs/publication_pipeline.md
+data/PUBLICATION_DATA_README.md
 ```
 
-Whitespace check:
+The README now describes the current label, GO, provenance, prediction, and
+analysis behavior. The research workflow gives a complete protocol from input
+ledger through manuscript figures. The limitations file is written as text
+that can be inserted into a manuscript and distinguishes software-controlled
+choices from unavoidable biological, archival, and inferential limitations.
+The publication-pipeline document explains the one-shot command, experimental
+tracks, organism-specific label rules, comparable MLP, output tree, completion
+gates, result sequence, and includes paper-ready Methods text.
 
-```bash
-git diff --check
-```
+## Publication Data And Automation
 
-Result:
+Files:
 
 ```text
-no whitespace errors reported
+data/publication_snapshots.tsv
+data/File_Overview_publication.xlsx
+scripts/run_publication_pipeline.sh
+src/PhenGO/scripts/publication_inputs.py
+src/PhenGO/scripts/publication_summary.py
 ```
 
-## Known Environment Issue
+- The 80-row TSV is the runtime authority: 49 required declared composite
+  organism-year cross-sections and 31 optional fixed-label annotation anchors.
+- A cleaned, human-facing workbook is generated from the ledger. Its
+  formula-driven coverage sheets report 49 required rows, 31 annotation-anchor
+  rows, and live file-availability checks.
+- The master ARM64 script validates inputs, compression, tests, architecture,
+  environment, and provenance; derives mouse, fly, and worm inputs; creates and
+  validates all ARFF tracks; runs all six comparable models and four baselines;
+  runs temporal GO analysis; aggregates paper tables; generates reports; and
+  hashes the results.
+- The repeated engine evaluates all model families in every year. The older
+  held-out TensorFlow/sklearn suite runs all model types on 2025 by default as a
+  supplementary implementation check; `PHENGO_SINGLE_SNAPSHOT_YEARS` can
+  request additional years without making that weaker design the primary one.
+- Required analyses cover the primary annual cross-sections, `is_a`-only,
+  no-IEA, fixed-2025
+  `is_a + part_of`, and fixed-2025 `is_a` tracks. The 25 newly supplied
+  2010-2014 GAFs were validated and added to the complete annotation series.
+- Historical GO handling now records the actual format eras: full `go.obo` for
+  2010-2012, first available `go-simple` in 2013, and `go-basic` from 2014.
+  The long 2010-2025 track uses only `is_a` because early `part_of` edges cross
+  namespaces; the directly comparable `is_a + part_of` series starts in 2014.
+- Annotation anchors are required by default. Exploratory partial runs must
+  explicitly pass `--allow-missing-anchors`; missing inputs are never replaced.
+- Publication aggregation now includes prediction instability, feature-rank
+  stability, previous-available-snapshot labels with explicit calendar gaps,
+  complete temporal enrichment statistics,
+  and supplementary single-snapshot model results.
+- Dry-run mode now emits downstream ML commands even though ARFFs are not
+  physically created, so every model and MLP parameter can be audited before a
+  long run.
+- `scripts/generate_publication_mock.py` creates a deterministic pre-run design
+  review with eight schema-matched synthetic tables and eight publication-style
+  figure panels. Every artifact is visibly marked as synthetic and non-citable.
 
-The local conda environment currently has a NumPy binary architecture mismatch:
+## Publication Pipeline V2 And Correspondence-Informed Controls
+
+Files:
 
 ```text
-NumPy extension architecture: x86_64
-Python architecture needed: arm64 / arm64e
+scripts/run_publication_pipeline_v2.sh
+scripts/v2/alternative_inputs.py
+scripts/v2/publication_multiverse.py
+data/resource_availability.tsv
+docs/publication_pipeline_v2.md
+tests/test_v2_alternative_inputs.py
+tests/test_v2_publication_multiverse.py
+tests/test_temporal_intervals.py
 ```
 
-This means full ML runs that import NumPy, pandas, or sklearn will fail in that
-environment until NumPy is reinstalled for the correct architecture. The
-lightweight unit tests and CLI help checks pass, but end-to-end sklearn analyses
-need the environment repaired first.
+- Provider correspondence is represented as an availability/context ledger,
+  including resources that were never generated, were not preserved after a
+  platform migration, were temporarily inaccessible, were recovered through a
+  web archive, or remain unconfirmed. Missing years are not imputed.
+- Organism-year rows are now described as declared composite cross-sections of
+  independently released phenotype, GAF, and ontology resources, rather than
+  synchronized database releases.
+- The Fly sensitivity tracks derive paired gene sets with a fail-closed parser.
+  It recognizes top-level space, slash, and `with` syntax outside allele
+  brackets; retains only completely resolved accessory or same-gene contexts;
+  and excludes accessory primaries, second genes, unknown components, ambiguous
+  phenotypes, and gene-level lethal/viable conflicts. Every source row has an
+  audit outcome.
+- Annual Worm lethal-term sets are regenerated from only the three complete-
+  lethality roots confirmed by the supplied WormBase correspondence. `NOT`
+  assertions remain exclusions rather than evidence for viability.
+- Previous-label baselines and transfer outputs report signed and absolute
+  calendar gaps. Temporal lifecycle fields refer to available snapshots, and
+  GO enrichment trends are per calendar year. Multiple captures from one
+  nominal year are averaged before fitting a trend so that year is not
+  inadvertently upweighted.
+- V2 runs every configured model family and panel for every eligible track with
+  at least two snapshots. Alternative IMPC and recovered MGI negative classes
+  are explicitly labelled operational rather than experimentally complete.
+- The provider-GAF sensitivity track now includes the two available ZFIN files.
+  The 2017 provider/archive stable-ID-plus-GO Jaccard is 0.8271, whereas the
+  provider file dated 2017-12-15 is identical to the selected 2018 archive GAF;
+  exact source filenames are retained in release metadata.
+- The provider-GAF track also includes SGD for the five years with compatible
+  archived yeast phenotype snapshots; all 16 annual provider GAFs remain in the
+  input audit without fabricating phenotype coverage for missing years.
+- V2 is now the single master entry point. It builds a missing V1, resumes an
+  inactive partial V1, or audits a completed V1 before running the extension
+  and consolidation. A completed run with old schemas, unspecified component
+  alignment, orphan or hash-mismatched ARFFs, duplicate snapshot IDs, or mixed
+  source revisions is rebuilt cleanly instead of being silently reused. A clean
+  V1 from an older source revision is also rebuilt, and consolidation requires
+  V1 and V2 to declare the same source hash.
+  Date-derived defaults and `--run-root` support
+  future one-command runs; process locks and legacy-process discovery prevent
+  running or suspended concurrent writers. Recent-log fallback is used only
+  where process-table discovery is unavailable, avoiding false active-run
+  detection after an intentional stop. Resume now
+  preserves command and skipped-input ledgers, while planning-only markers make
+  a dry run harmless to a subsequent real run. A fresh-root master dry run
+  expands both V1 and V2, while an incomplete V1 with scientific files is left
+  untouched.
+- Both Bash entry points now change to their repository root before invoking
+  relative tests or helper paths, so absolute-path and `launchd` execution do
+  not depend on the caller's working directory.
+- Consolidation now checks free space, creates independent copies of both
+  completed source runs at `source_runs/v1` and
+  `source_runs/v2_extension`, hashes and verifies every copied file, and builds
+  all combined tables and figures from those copies. APFS uses copy-on-write
+  clones to avoid immediately doubling disk blocks; other filesystems use
+  ordinary copies. The extension is frozen before copying so its log cannot
+  change during verification. Its transient live-process lock is kept outside
+  the copied run tree.
+- `consolidated_manifest.json`, `source_run_file_inventory.tsv`, and
+  `consolidated.complete` make the final directory independently auditable.
+  `phase_source_hash_inventory.tsv` additionally exposes the exact source hash
+  declared by each ARFF, ML, and temporal-analysis manifest. Mandatory base and
+  extension integrity reports are also included. The original V1 and V2 roots
+  remain untouched after successful generation.
 
-## Generated Files Present In The Working Tree
+## Tests
 
-Running tests created Python bytecode cache files under directories such as:
+New tests:
 
 ```text
-tests/__pycache__/
-src/PhenGO/predict/__pycache__/
+tests/test_core_integration.py
+tests/test_go_relations.py
+tests/test_go_and_phenotype_policies.py
+tests/test_go_statistics.py
+tests/test_label_sources.py
+tests/test_sklearn_calibration.py
+tests/test_version_cli_integration.py
+tests/test_version_sensitivity_oof.py
+tests/test_publication_inputs.py
+tests/test_publication_summary.py
+tests/test_temporal_intervals.py
+tests/test_v2_alternative_inputs.py
+tests/test_v2_publication_multiverse.py
 ```
 
-These are generated artifacts, not source changes. They should normally be
-ignored or removed before committing.
+They add coverage for:
 
-## Full Source File Change List
+- strict end-to-end ARFF generation and manifests;
+- stable accession output and lethal/viable polarity;
+- `is_a` and `part_of` propagation;
+- alternate GO IDs and obsolete replacement chains;
+- exact worm evidence, qualifier, and phenotype-term filtering;
+- stable GAF joins;
+- global rejection of one-to-many symbols, strict synonym disabling, stable-ID
+  phenotype parsing, authoritative paired gene sets, and fly assignment conflicts;
+- finite corrected GO effect sizes, Fisher tests, and FDR correction;
+- nested probability calibration and calibrated-model feature importance;
+- gene-disjoint transfer and prediction-instability scoring;
+- complete command-line version-sensitivity output and analysis manifests;
+- canonical ARFF binary serialization and invalid feature rejection;
+- paired label-set completeness, disagreement filtering, and audit manifests;
+- rejection of cross-namespace GO propagation without an explicit override;
+- cross-snapshot policy-drift and incomplete-evaluation rejection.
+- comparable MLP probability, calibration, class-balancing, convergence, and
+  early-stopping preflight behavior;
+- training-vocabulary-only transfer and fixed gene-fold reuse;
+- publication input conversion, compressed OBO traversal, and result-table
+  aggregation.
 
-Modified tracked files:
+The original tests continue to cover label aliases, ancestor filtering, quoted
+gene IDs, mouse report layouts, mouse accession joins, ARFF discovery, model
+expansion, and natural release sorting.
 
-- `README.md`
-- `setup.cfg`
-- `src/PhenGO/constants.py`
-- `src/PhenGO/core/PhenGO.py`
-- `src/PhenGO/core/go_handling.py`
-- `src/PhenGO/core/phenotype_handling.py`
-- `src/PhenGO/predict/PhenGO-Predict.py`
-- `src/PhenGO/predict/__init__.py`
-- `src/PhenGO/predict/data.py`
-- `src/PhenGO/predict/evaluate.py`
-- `src/PhenGO/predict/sklearn_models.py`
-- `src/PhenGO/predict/visualise.py`
-- `src/PhenGO/scripts/GO_Compare.py`
-- `src/PhenGO/scripts/GO_temporal_analysis.py`
-- `src/PhenGO/scripts/arff_validator.py`
-- `src/PhenGO/scripts/compare_arff_genes.py`
-- `src/PhenGO/scripts/report_generator.py`
+### Verification
 
-Added source/documentation/test files:
+Using `/Users/nicholas/miniconda3/envs/PhenGO`:
 
-- `CHANGELOG_SINCE_LAST_COMMIT.md`
-- `docs/version_sensitivity_workflow.md`
-- `src/PhenGO/predict/cli.py`
-- `src/PhenGO/predict/version_sensitivity.py`
-- `tests/test_arff_io.py`
-- `tests/test_core_go_filtering.py`
-- `tests/test_mouse_parser.py`
-- `tests/test_predict_labels.py`
-- `tests/test_version_sensitivity.py`
+```text
+pytest                         64 passed
+focused V2 tests              15 passed
+compileall                     passed
+Ruff on changed Python files   passed (system Ruff; not installed in the env)
+git diff --check               passed
+pip check                      no broken requirements
+bash -n both pipeline scripts  passed
+V1 all-organism dry run        287 ARFF builds and 25 all-model analyses emitted
+V2 full dry run                136 ARFF builds and 15 all-model analyses emitted
+fresh-root master dry run      423 ARFF builds and 40 all-model analyses emitted
+real-data NN smoke             3 yeast releases, 9 transfer directions complete
+real-data identifier smoke     2016 snapshots for all five organisms use stable-ID joins
+real fish regression           fish 2016 ARFF rebuilt and validated; original collision absent
+real FlyBase parser audit      393,904 rows; 7,586 lethal, 3,286 viable, 1,541 mixed genes excluded
+real ZFIN provider smoke       2017 ARFF built and validated; 3,591 final genes, manifest schema 3
+```
+
+Core, version-sensitivity, and temporal-analysis command help, along with
+`PhenGO --print-defaults`, were also exercised successfully.
+
+## Required Regeneration And Migration
+
+Regenerate ARFF files when any manuscript result depends on:
+
+- stable row identifiers;
+- conservative label policies;
+- worm evidence filtering;
+- fish ambiguous-phenotype handling;
+- fly lethal or multi-gene filtering;
+- GO relation selection;
+- GO alternate/obsolete mappings;
+- root or prevalence filtering;
+- strict provenance manifests.
+
+In practice, regenerate every publication ARFF. The version-sensitivity command
+will otherwise reject the files unless legacy manifest checks are disabled.
+
+After regeneration, rerun all model, temporal enrichment, ARFF comparison, and
+report outputs. Old trained models are not schema-compatible with a changed GO
+feature matrix and should not be reused.

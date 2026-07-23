@@ -1,0 +1,89 @@
+data_status	track	organism	year	go_id	go_name	odds_ratio	fdr	minus_log10_fdr	lethal_gene_count
+synthetic_mock_not_results	primary	worm	2015	GO:0007049	cell cycle	1.8400	0.0631	1.2000	20
+synthetic_mock_not_results	primary	worm	2016	GO:0007049	cell cycle	2.4066	0.0098	2.0094	26
+synthetic_mock_not_results	primary	worm	2017	GO:0007049	cell cycle	2.7941	0.0027	2.5630	29
+synthetic_mock_not_results	primary	worm	2018	GO:0007049	cell cycle	2.8798	0.0021	2.6855	30
+synthetic_mock_not_results	primary	worm	2019	GO:0007049	cell cycle	2.6368	0.0046	2.3383	28
+synthetic_mock_not_results	primary	worm	2020	GO:0007049	cell cycle	2.1419	0.0234	1.6312	23
+synthetic_mock_not_results	primary	worm	2021	GO:0007049	cell cycle	1.5514	0.1630	0.7878	17
+synthetic_mock_not_results	primary	worm	2022	GO:0007049	cell cycle	1.0523	0.8421	0.0747	12
+synthetic_mock_not_results	primary	worm	2023	GO:0007049	cell cycle	1.0000	1.0000	0.0000	12
+synthetic_mock_not_results	primary	worm	2024	GO:0007049	cell cycle	1.0000	1.0000	0.0000	12
+synthetic_mock_not_results	primary	worm	2025	GO:0007049	cell cycle	1.2618	0.4227	0.3740	14
+synthetic_mock_not_results	primary	worm	2015	GO:0006281	DNA repair	2.6148	0.0049	2.3069	29
+synthetic_mock_not_results	primary	worm	2016	GO:0006281	DNA repair	2.8747	0.0021	2.6782	31
+synthetic_mock_not_results	primary	worm	2017	GO:0006281	DNA repair	2.8074	0.0026	2.5821	31
+synthetic_mock_not_results	primary	worm	2018	GO:0006281	DNA repair	2.4343	0.0089	2.0489	27
+synthetic_mock_not_results	primary	worm	2019	GO:0006281	DNA repair	1.8732	0.0566	1.2474	21
+synthetic_mock_not_results	primary	worm	2020	GO:0006281	DNA repair	1.3016	0.3708	0.4308	16
+synthetic_mock_not_results	primary	worm	2021	GO:0006281	DNA repair	1.0000	1.0000	0.0000	13
+synthetic_mock_not_results	primary	worm	2022	GO:0006281	DNA repair	1.0000	1.0000	0.0000	13
+synthetic_mock_not_results	primary	worm	2023	GO:0006281	DNA repair	1.0220	0.9303	0.0314	13
+synthetic_mock_not_results	primary	worm	2024	GO:0006281	DNA repair	1.5065	0.1890	0.7236	18
+synthetic_mock_not_results	primary	worm	2025	GO:0006281	DNA repair	2.0965	0.0271	1.5665	23
+synthetic_mock_not_results	primary	worm	2015	GO:0006412	translation	2.8858	0.0020	2.6940	32
+synthetic_mock_not_results	primary	worm	2016	GO:0006412	translation	2.6700	0.0041	2.3857	30
+synthetic_mock_not_results	primary	worm	2017	GO:0006412	translation	2.1917	0.0198	1.7025	25
+synthetic_mock_not_results	primary	worm	2018	GO:0006412	translation	1.6023	0.1379	0.8604	20
+synthetic_mock_not_results	primary	worm	2019	GO:0006412	translation	1.0879	0.7488	0.1256	14
+synthetic_mock_not_results	primary	worm	2020	GO:0006412	translation	1.0000	1.0000	0.0000	14
+synthetic_mock_not_results	primary	worm	2021	GO:0006412	translation	1.0000	1.0000	0.0000	14
+synthetic_mock_not_results	primary	worm	2022	GO:0006412	translation	1.2187	0.4870	0.3124	16
+synthetic_mock_not_results	primary	worm	2023	GO:0006412	translation	1.7737	0.0785	1.1053	21
+synthetic_mock_not_results	primary	worm	2024	GO:0006412	translation	2.3497	0.0118	1.9281	27
+synthetic_mock_not_results	primary	worm	2025	GO:0006412	translation	2.7645	0.0030	2.5207	31
+synthetic_mock_not_results	primary	worm	2015	GO:0006915	apoptotic process	2.4768	0.0078	2.1097	29
+synthetic_mock_not_results	primary	worm	2016	GO:0006915	apoptotic process	1.9256	0.0476	1.3223	24
+synthetic_mock_not_results	primary	worm	2017	GO:0006915	apoptotic process	1.3473	0.3190	0.4962	18
+synthetic_mock_not_results	primary	worm	2018	GO:0006915	apoptotic process	1.0000	1.0000	0.0000	15
+synthetic_mock_not_results	primary	worm	2019	GO:0006915	apoptotic process	1.0000	1.0000	0.0000	15
+synthetic_mock_not_results	primary	worm	2020	GO:0006915	apoptotic process	1.0000	1.0000	0.0000	15
+synthetic_mock_not_results	primary	worm	2021	GO:0006915	apoptotic process	1.4572	0.2223	0.6531	19
+synthetic_mock_not_results	primary	worm	2022	GO:0006915	apoptotic process	2.0453	0.0321	1.4933	25
+synthetic_mock_not_results	primary	worm	2023	GO:0006915	apoptotic process	2.5685	0.0057	2.2408	30
+synthetic_mock_not_results	primary	worm	2024	GO:0006915	apoptotic process	2.8614	0.0022	2.6591	33
+synthetic_mock_not_results	primary	worm	2025	GO:0006915	apoptotic process	2.8313	0.0024	2.6161	33
+synthetic_mock_not_results	primary	worm	2015	GO:0006096	glycolytic process	1.6537	0.1165	0.9338	22
+synthetic_mock_not_results	primary	worm	2016	GO:0006096	glycolytic process	1.1255	0.6618	0.1793	17
+synthetic_mock_not_results	primary	worm	2017	GO:0006096	glycolytic process	1.0000	1.0000	0.0000	16
+synthetic_mock_not_results	primary	worm	2018	GO:0006096	glycolytic process	1.0000	1.0000	0.0000	16
+synthetic_mock_not_results	primary	worm	2019	GO:0006096	glycolytic process	1.1772	0.5583	0.2531	17
+synthetic_mock_not_results	primary	worm	2020	GO:0006096	glycolytic process	1.7214	0.0932	1.0306	23
+synthetic_mock_not_results	primary	worm	2021	GO:0006096	glycolytic process	2.3031	0.0138	1.8616	29
+synthetic_mock_not_results	primary	worm	2022	GO:0006096	glycolytic process	2.7384	0.0033	2.4835	33
+synthetic_mock_not_results	primary	worm	2023	GO:0006096	glycolytic process	2.8896	0.0020	2.6995	34
+synthetic_mock_not_results	primary	worm	2024	GO:0006096	glycolytic process	2.7090	0.0036	2.4414	33
+synthetic_mock_not_results	primary	worm	2025	GO:0006096	glycolytic process	2.2535	0.0162	1.7907	28
+synthetic_mock_not_results	primary	worm	2015	GO:0006629	lipid metabolic process	1.0000	1.0000	0.0000	17
+synthetic_mock_not_results	primary	worm	2016	GO:0006629	lipid metabolic process	1.0000	1.0000	0.0000	17
+synthetic_mock_not_results	primary	worm	2017	GO:0006629	lipid metabolic process	1.0000	1.0000	0.0000	17
+synthetic_mock_not_results	primary	worm	2018	GO:0006629	lipid metabolic process	1.4088	0.2606	0.5840	21
+synthetic_mock_not_results	primary	worm	2019	GO:0006629	lipid metabolic process	1.9936	0.0381	1.4194	26
+synthetic_mock_not_results	primary	worm	2020	GO:0006629	lipid metabolic process	2.5298	0.0065	2.1855	32
+synthetic_mock_not_results	primary	worm	2021	GO:0006629	lipid metabolic process	2.8479	0.0023	2.6399	35
+synthetic_mock_not_results	primary	worm	2022	GO:0006629	lipid metabolic process	2.8473	0.0023	2.6391	35
+synthetic_mock_not_results	primary	worm	2023	GO:0006629	lipid metabolic process	2.5282	0.0066	2.1832	32
+synthetic_mock_not_results	primary	worm	2024	GO:0006629	lipid metabolic process	1.9915	0.0383	1.4164	26
+synthetic_mock_not_results	primary	worm	2025	GO:0006629	lipid metabolic process	1.4069	0.2623	0.5812	21
+synthetic_mock_not_results	primary	worm	2015	GO:0006355	regulation of transcription	1.0000	1.0000	0.0000	18
+synthetic_mock_not_results	primary	worm	2016	GO:0006355	regulation of transcription	1.1373	0.6366	0.1961	19
+synthetic_mock_not_results	primary	worm	2017	GO:0006355	regulation of transcription	1.6694	0.1106	0.9563	24
+synthetic_mock_not_results	primary	worm	2018	GO:0006355	regulation of transcription	2.2555	0.0161	1.7935	30
+synthetic_mock_not_results	primary	worm	2019	GO:0006355	regulation of transcription	2.7102	0.0036	2.4431	35
+synthetic_mock_not_results	primary	worm	2020	GO:0006355	regulation of transcription	2.8897	0.0020	2.6996	36
+synthetic_mock_not_results	primary	worm	2021	GO:0006355	regulation of transcription	2.7373	0.0033	2.4819	35
+synthetic_mock_not_results	primary	worm	2022	GO:0006355	regulation of transcription	2.3012	0.0138	1.8589	31
+synthetic_mock_not_results	primary	worm	2023	GO:0006355	regulation of transcription	1.7193	0.0939	1.0275	25
+synthetic_mock_not_results	primary	worm	2024	GO:0006355	regulation of transcription	1.1755	0.5614	0.2507	19
+synthetic_mock_not_results	primary	worm	2025	GO:0006355	regulation of transcription	1.0000	1.0000	0.0000	18
+synthetic_mock_not_results	primary	worm	2015	GO:0006974	response to DNA damage	1.3615	0.3045	0.5164	22
+synthetic_mock_not_results	primary	worm	2016	GO:0006974	response to DNA damage	1.9415	0.0452	1.3450	28
+synthetic_mock_not_results	primary	worm	2017	GO:0006974	response to DNA damage	2.4894	0.0075	2.1277	33
+synthetic_mock_not_results	primary	worm	2018	GO:0006974	response to DNA damage	2.8320	0.0024	2.6171	37
+synthetic_mock_not_results	primary	worm	2019	GO:0006974	response to DNA damage	2.8609	0.0022	2.6584	37
+synthetic_mock_not_results	primary	worm	2020	GO:0006974	response to DNA damage	2.5670	0.0058	2.2386	34
+synthetic_mock_not_results	primary	worm	2021	GO:0006974	response to DNA damage	2.0432	0.0323	1.4903	29
+synthetic_mock_not_results	primary	worm	2022	GO:0006974	response to DNA damage	1.4552	0.2237	0.6503	23
+synthetic_mock_not_results	primary	worm	2023	GO:0006974	response to DNA damage	1.0000	1.0000	0.0000	19
+synthetic_mock_not_results	primary	worm	2024	GO:0006974	response to DNA damage	1.0000	1.0000	0.0000	19
+synthetic_mock_not_results	primary	worm	2025	GO:0006974	response to DNA damage	1.0000	1.0000	0.0000	19

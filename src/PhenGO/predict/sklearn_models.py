@@ -9,9 +9,11 @@ rf  — Random Forest
 gb  — Gradient Boosting
 lr  — Logistic Regression
 svm — Support Vector Machine (RBF kernel, probability=True)
+nn  — Feed-forward Neural Network (sklearn MLPClassifier)
 """
 
 import os
+import json
 import logging
 import numpy as np
 import pandas as pd
@@ -20,11 +22,14 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
-from sklearn.inspection import permutation_importance
+from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import (
     roc_auc_score, classification_report, confusion_matrix,
     precision_score, recall_score, accuracy_score, roc_curve, f1_score,
+    average_precision_score, balanced_accuracy_score, brier_score_loss,
+    matthews_corrcoef,
 )
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.utils.class_weight import compute_sample_weight
 
 import matplotlib
@@ -40,7 +45,17 @@ MODEL_LABELS = {
     'gb':  'Gradient Boosting',
     'lr':  'Logistic Regression',
     'svm': 'Support Vector Machine',
+    'nn':  'Neural Network (MLP)',
 }
+
+
+def _positive_scores(model, X):
+    """Return scores for class 1 without assuming probability-column order."""
+    if hasattr(model, 'predict_proba'):
+        classes = list(model.classes_)
+        return model.predict_proba(X)[:, classes.index(1)]
+    decision = np.asarray(model.decision_function(X), dtype=float)
+    return 1 / (1 + np.exp(-decision))
 
 
 def build_sklearn_model(model_type, options):
@@ -49,13 +64,15 @@ def build_sklearn_model(model_type, options):
     Parameters
     ----------
     model_type : str
-        One of ``dt``, ``rf``, ``gb``, ``lr``, ``svm``.
+        One of ``dt``, ``rf``, ``gb``, ``lr``, ``svm``, ``nn``.
     options : argparse.Namespace
         CLI options; reads ``max_depth``, ``n_estimators`` when present.
     """
     max_depth    = getattr(options, 'max_depth',    None)
     n_estimators = getattr(options, 'n_estimators', 200)
     random_state = getattr(options, 'random_state', getattr(options, 'seed', 42))
+    n_jobs = getattr(options, 'n_jobs', 1)
+    calibration = getattr(options, 'calibration', 'none')
 
     if model_type == 'dt':
         return DecisionTreeClassifier(
@@ -68,7 +85,7 @@ def build_sklearn_model(model_type, options):
             n_estimators=n_estimators,
             max_depth=max_depth,
             class_weight='balanced',
-            n_jobs=-1,
+            n_jobs=n_jobs,
             random_state=random_state,
         )
     elif model_type == 'gb':
@@ -81,14 +98,30 @@ def build_sklearn_model(model_type, options):
         return LogisticRegression(
             max_iter=2000,
             class_weight='balanced',
-            n_jobs=-1,
+            n_jobs=n_jobs,
             random_state=random_state,
         )
     elif model_type == 'svm':
         return SVC(
             kernel='rbf',
             class_weight='balanced',
-            probability=True,   # required for predict_proba / AUC
+            # CalibratedClassifierCV consumes decision_function directly. Do
+            # not run SVC's internal Platt fit and then calibrate it again.
+            probability=(calibration == 'none'),
+            random_state=random_state,
+        )
+    elif model_type == 'nn':
+        return MLPClassifier(
+            hidden_layer_sizes=tuple(getattr(options, 'nn_hidden_units', (128, 64))),
+            activation='relu',
+            solver='adam',
+            alpha=getattr(options, 'nn_alpha', 0.0001),
+            batch_size=getattr(options, 'nn_batch_size', 32),
+            learning_rate_init=getattr(options, 'nn_learning_rate_init', 0.001),
+            max_iter=getattr(options, 'nn_max_iter', 300),
+            early_stopping=getattr(options, 'nn_early_stopping', True),
+            validation_fraction=getattr(options, 'nn_validation_fraction', 0.1),
+            n_iter_no_change=getattr(options, 'nn_n_iter_no_change', 15),
             random_state=random_state,
         )
     else:
@@ -124,10 +157,22 @@ def train_evaluate_sklearn_model(
     logger.info(f"  Test  samples : {len(X_test)}")
     logger.info('='*60)
 
-    model = build_sklearn_model(model_type, options)
+    base_model = build_sklearn_model(model_type, options)
+    calibration = getattr(options, 'calibration', 'sigmoid')
+    calibration_cv = min(
+        getattr(options, 'calibration_cv', 3),
+        int(np.bincount(np.asarray(y_train, dtype=int)).min()),
+    )
+    model = base_model
+    if calibration != 'none' and calibration_cv >= 2:
+        model = CalibratedClassifierCV(
+            estimator=base_model,
+            method=calibration,
+            cv=calibration_cv,
+        )
     sample_weight = (
         compute_sample_weight(class_weight='balanced', y=y_train)
-        if model_type == 'gb'
+        if model_type in {'gb', 'nn'}
         else None
     )
     if sample_weight is not None:
@@ -137,18 +182,24 @@ def train_evaluate_sklearn_model(
     logger.info("  Training complete.")
 
     # ── Metrics ────────────────────────────────────────────────────────────
-    y_pred  = model.predict(X_test)
-    y_proba = model.predict_proba(X_test)[:, 1]   # P(lethal / positive class)
+    y_pred = model.predict(X_test)
+    y_proba = _positive_scores(model, X_test)
 
     acc  = accuracy_score (y_test, y_pred)
     prec = precision_score(y_test, y_pred, zero_division=0)
     rec  = recall_score   (y_test, y_pred, zero_division=0)
-    auc  = roc_auc_score  (y_test, y_proba)
+    auc  = roc_auc_score(y_test, y_proba) if len(np.unique(y_test)) > 1 else float('nan')
+    ap   = average_precision_score(y_test, y_proba) if len(np.unique(y_test)) > 1 else float('nan')
+    bal_acc = balanced_accuracy_score(y_test, y_pred) if len(np.unique(y_test)) > 1 else float('nan')
+    mcc = matthews_corrcoef(y_test, y_pred) if len(np.unique(y_test)) > 1 else float('nan')
+    brier = brier_score_loss(y_test, y_proba)
     f1_macro = f1_score(y_test, y_pred, average='macro', zero_division=0)
 
     # Per-class F1
     cls_report = classification_report(
-        y_test, y_pred, target_names=label_encoder.classes_, output_dict=True)
+        y_test, y_pred, labels=[0, 1], target_names=label_encoder.classes_,
+        output_dict=True, zero_division=0,
+    )
     f1_lethal = cls_report.get('lethal', {}).get('f1-score', float('nan'))
     f1_viable = cls_report.get('viable', {}).get('f1-score', float('nan'))
 
@@ -156,6 +207,7 @@ def train_evaluate_sklearn_model(
     logger.info(f"  Precision: {prec:.3f}")
     logger.info(f"  Recall:    {rec:.3f}")
     logger.info(f"  AUC:       {auc:.3f}")
+    logger.info(f"  AP:        {ap:.3f}")
     logger.info(f"  F1 macro:  {f1_macro:.3f}  (lethal {f1_lethal:.3f} / viable {f1_viable:.3f})")
 
     # ── Predictions CSV ────────────────────────────────────────────────────
@@ -175,6 +227,10 @@ def train_evaluate_sklearn_model(
         rf.write(f"Precision: {prec:.3f}\n")
         rf.write(f"Recall:    {rec:.3f}\n")
         rf.write(f"AUC:       {auc:.3f}\n")
+        rf.write(f"Average precision: {ap:.3f}\n")
+        rf.write(f"Balanced accuracy: {bal_acc:.3f}\n")
+        rf.write(f"MCC:       {mcc:.3f}\n")
+        rf.write(f"Brier:     {brier:.3f}\n")
         rf.write(f"F1_macro:  {f1_macro:.3f}\n")
         rf.write(f"F1_lethal: {f1_lethal:.3f}\n")
         rf.write(f"F1_viable: {f1_viable:.3f}\n\n")
@@ -184,27 +240,45 @@ def train_evaluate_sklearn_model(
         rf.write(str(confusion_matrix(y_test, y_pred)) + "\n\n")
         rf.write("Classification Report:\n")
         rf.write(classification_report(
-            y_test, y_pred, target_names=label_encoder.classes_))
+            y_test, y_pred, labels=[0, 1], target_names=label_encoder.classes_,
+            zero_division=0,
+        ))
 
     # ── ROC curve ──────────────────────────────────────────────────────────
-    fpr, tpr, _ = roc_curve(y_test, y_proba)
-    fig, ax = plt.subplots(figsize=(7, 6))
-    ax.plot(fpr, tpr, lw=2, color='steelblue', label=f'AUC = {auc:.3f}')
-    ax.plot([0, 1], [0, 1], 'k--', lw=1)
-    ax.set_xlabel('False Positive Rate')
-    ax.set_ylabel('True Positive Rate')
-    ax.set_title(f'ROC Curve — {label}')
-    ax.legend(loc='lower right')
-    fig.tight_layout()
-    fig.savefig(os.path.join(model_dir, 'roc_curve.png'), dpi=150)
-    plt.close(fig)
-    logger.info(f"  ROC curve saved.")
+    if len(np.unique(y_test)) > 1:
+        fpr, tpr, _ = roc_curve(y_test, y_proba)
+        fig, ax = plt.subplots(figsize=(7, 6))
+        ax.plot(fpr, tpr, lw=2, color='steelblue', label=f'AUC = {auc:.3f}')
+        ax.plot([0, 1], [0, 1], 'k--', lw=1)
+        ax.set_xlabel('False Positive Rate')
+        ax.set_ylabel('True Positive Rate')
+        ax.set_title(f'ROC Curve — {label}')
+        ax.legend(loc='lower right')
+        fig.tight_layout()
+        fig.savefig(os.path.join(model_dir, 'roc_curve.png'), dpi=150)
+        plt.close(fig)
+        logger.info("  ROC curve saved.")
 
     # ── Feature importance ─────────────────────────────────────────────────
     _write_feature_importance(
         model, model_type, X_test, y_test,
         go_term_columns, model_dir, options,
     )
+
+    import joblib
+
+    joblib.dump(model, os.path.join(model_dir, 'model.joblib'))
+    with open(os.path.join(model_dir, 'model_schema.json'), 'w', encoding='utf-8') as handle:
+        json.dump({
+            'schema_version': 1,
+            'model_type': model_type,
+            'feature_names': list(go_term_columns),
+            'class_mapping': {'viable': 0, 'lethal': 1},
+            'positive_class': 'lethal',
+            'threshold': 0.5,
+            'calibration': calibration if calibration_cv >= 2 else 'none',
+        }, handle, indent=2, sort_keys=True)
+        handle.write('\n')
 
     logger.info(f"  Outputs written to: {model_dir}/")
     return {
@@ -214,6 +288,10 @@ def train_evaluate_sklearn_model(
         'precision':  prec,
         'recall':     rec,
         'auc':        auc,
+        'average_precision': ap,
+        'balanced_accuracy': bal_acc,
+        'mcc': mcc,
+        'brier_score': brier,
         'f1_macro':   f1_macro,
         'f1_lethal':  f1_lethal,
         'f1_viable':  f1_viable,
@@ -231,7 +309,7 @@ def _permutation_importance_with_classes(model, X_test, y_test,
     n_features = X_test.shape[1]
     total_iters = n_features * n_repeats
 
-    baseline_proba = model.predict_proba(X_test)[:, 1]
+    baseline_proba = _positive_scores(model, X_test)
     baseline_pred  = (baseline_proba > 0.5).astype(int)
     baseline_acc   = np.mean(baseline_pred == y_test)
 
@@ -254,7 +332,7 @@ def _permutation_importance_with_classes(model, X_test, y_test,
             rng = np.random.default_rng(seed=rep * n_features + i)
             rng.shuffle(X_perm[:, i])
 
-            perm_proba = model.predict_proba(X_perm)[:, 1]
+            perm_proba = _positive_scores(model, X_perm)
             perm_pred  = (perm_proba > 0.5).astype(int)
             drops_o.append(baseline_acc - np.mean(perm_pred == y_test))
             if lethal_mask.sum() > 0:
@@ -308,32 +386,48 @@ def _write_feature_importance(model, model_type, X_test, y_test,
     * ``feature_importance_native.csv``    — raw Gini/impurity importances (fast
       reference; unaffected by test-set size and permutation noise)
     """
-    import time as _time
-
     n_top        = min(50, len(go_term_columns))
     perm_repeats = getattr(options, 'perm_repeats', 5)
     label        = MODEL_LABELS.get(model_type, model_type)
 
     # ── 1. Native importances (tree / LR only) ─────────────────────────────
+    calibrated_estimators = [
+        calibrated.estimator for calibrated in
+        getattr(model, 'calibrated_classifiers_', [])
+    ]
+    native_estimators = calibrated_estimators or [model]
+
     if model_type in ('dt', 'rf', 'gb'):
-        importances = model.feature_importances_
-        indices     = np.argsort(importances)[::-1][:n_top]
-        pd.DataFrame({
-            'GO_Term':    [go_term_columns[i] for i in indices],
-            'Importance': importances[indices],
-        }).to_csv(os.path.join(output_dir, 'feature_importance_native.csv'), index=False)
-        logger.info(f"  Native (Gini) importances written.")
+        available = [
+            estimator.feature_importances_ for estimator in native_estimators
+            if hasattr(estimator, 'feature_importances_')
+        ]
+        importances = np.mean(available, axis=0) if available else None
+        if importances is None:
+            logger.warning("Native feature importance unavailable for %s", label)
+        else:
+            indices = np.argsort(importances)[::-1][:n_top]
+            pd.DataFrame({
+                'GO_Term':    [go_term_columns[i] for i in indices],
+                'Importance': importances[indices],
+            }).to_csv(os.path.join(output_dir, 'feature_importance_native.csv'), index=False)
+            logger.info("  Native (Gini) importances written.")
 
     elif model_type == 'lr':
-        coef    = model.coef_[0]
-        abs_c   = np.abs(coef)
-        indices = np.argsort(abs_c)[::-1][:n_top]
-        pd.DataFrame({
-            'GO_Term':     [go_term_columns[i] for i in indices],
-            'Coefficient': coef[indices],
-            'Abs_Coef':    abs_c[indices],
-        }).to_csv(os.path.join(output_dir, 'feature_importance_native.csv'), index=False)
-        logger.info(f"  Logistic Regression coefficients written.")
+        available = [
+            estimator.coef_[0] for estimator in native_estimators
+            if hasattr(estimator, 'coef_')
+        ]
+        if available:
+            coef = np.mean(available, axis=0)
+            abs_c = np.abs(coef)
+            indices = np.argsort(abs_c)[::-1][:n_top]
+            pd.DataFrame({
+                'GO_Term':     [go_term_columns[i] for i in indices],
+                'Coefficient': coef[indices],
+                'Abs_Coef':    abs_c[indices],
+            }).to_csv(os.path.join(output_dir, 'feature_importance_native.csv'), index=False)
+            logger.info("  Logistic Regression coefficients written.")
 
     # ── 2. Per-class permutation importance (all models) ───────────────────
     if perm_repeats > 0:
@@ -345,7 +439,7 @@ def _write_feature_importance(model, model_type, X_test, y_test,
         overall_df.to_csv(os.path.join(output_dir, 'overall_feature_importance.csv'), index=False)
         lethal_df.to_csv(os.path.join(output_dir,  'lethal_feature_importance.csv'),  index=False)
         viable_df.to_csv(os.path.join(output_dir,  'viable_feature_importance.csv'),  index=False)
-        logger.info(f"  Per-class importance CSVs written.")
+        logger.info("  Per-class importance CSVs written.")
 
         # ── Error-bar chart (top terms, sorted descending) ─────────────
         plot_df = overall_df.head(min(30, len(overall_df))).iloc[::-1]   # flip so top is highest
@@ -364,7 +458,7 @@ def _write_feature_importance(model, model_type, X_test, y_test,
         fig.tight_layout()
         fig.savefig(os.path.join(output_dir, 'feature_importance_with_errors.png'), dpi=150)
         plt.close(fig)
-        logger.info(f"  Error-bar importance plot written.")
+        logger.info("  Error-bar importance plot written.")
 
         # Also save a plain feature_importance.csv alias for backward compat
         overall_df[['GO_Term', 'Overall_Importance']].rename(
@@ -373,8 +467,7 @@ def _write_feature_importance(model, model_type, X_test, y_test,
 
     else:
         # perm_repeats == 0 → only native importances; generate a minimal alias
-        if model_type in ('dt', 'rf', 'gb'):
-            importances = model.feature_importances_
+        if model_type in ('dt', 'rf', 'gb') and available:
             indices     = np.argsort(importances)[::-1][:n_top]
             plot_vals   = importances[indices][::-1]
             plot_names  = [go_term_columns[i] for i in indices][::-1]
@@ -387,7 +480,7 @@ def _write_feature_importance(model, model_type, X_test, y_test,
             fig.tight_layout()
             fig.savefig(os.path.join(output_dir, 'feature_importance.png'), dpi=150)
             plt.close(fig)
-        logger.info(f"  Feature importance written (perm_repeats=0, native only).")
+        logger.info("  Feature importance written (perm_repeats=0, native only).")
 
 
 def write_model_comparison(results_list, output_dir):
@@ -434,4 +527,4 @@ def write_model_comparison(results_list, output_dir):
     fig.tight_layout()
     fig.savefig(os.path.join(output_dir, 'model_comparison_auc.png'), dpi=150)
     plt.close(fig)
-    logger.info(f"  Comparison chart: model_comparison_auc.png")
+    logger.info("  Comparison chart: model_comparison_auc.png")

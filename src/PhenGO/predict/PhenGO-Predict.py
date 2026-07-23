@@ -3,7 +3,7 @@ predict/PhenGO-Predict.py — Command-line entry point for PhenGO-Predict.
 
 Usage
 -----
-Single dataset (neural network, default)::
+Single dataset (logistic-regression baseline, default)::
 
     PhenGO-predict -arff_file data.arff -output_dir results/
 
@@ -34,9 +34,10 @@ all — Run all of the above
 """
 import os
 import sys
-import shutil
 import argparse
 import logging
+import json
+import re
 from datetime import datetime
 
 # ── Allow direct execution: python .../predict/PhenGO-Predict.py  ────────────
@@ -62,6 +63,7 @@ if __name__ == "__main__" and not __package__:
 # ─────────────────────────────────────────────────────────────────────────────
 
 from ..constants import configure_logger
+from ..provenance import prepare_output_dir
 
 configure_logger("PhenGO.predict", enable_file=False)
 logger = logging.getLogger("PhenGO.predict")
@@ -98,6 +100,15 @@ def _run_nn(options, X_train, X_test, y_train, y_test,
     from .visualise import plot_training_history, plot_roc_curve
     from .importance import analyse_feature_importance
     from sklearn.metrics import confusion_matrix, classification_report, f1_score
+    from sklearn.model_selection import train_test_split
+    import numpy as np
+
+    np.random.seed(options.seed)
+    tf.keras.utils.set_random_seed(options.seed)
+    try:
+        tf.config.experimental.enable_op_determinism()
+    except Exception:
+        logger.warning("TensorFlow deterministic operations are not available")
 
     nn_dir = os.path.join(output_dir, 'nn')
     os.makedirs(nn_dir, exist_ok=True)
@@ -105,8 +116,6 @@ def _run_nn(options, X_train, X_test, y_train, y_test,
     logger.info(f"\n{'='*60}")
     logger.info("Training: Neural Network")
     logger.info('='*60)
-
-    class_weights = compute_class_weights(y_train)
 
     model = create_model_sparse_optimised(
         input_dim=X_train.shape[1],
@@ -116,12 +125,21 @@ def _run_nn(options, X_train, X_test, y_train, y_test,
     model.summary(print_fn=logger.info)
 
     logger.info(f"  Training for up to {options.epochs} epochs ...")
+    stratify = y_train if len(np.unique(y_train)) > 1 else None
+    X_fit, X_valid, y_fit, y_valid = train_test_split(
+        X_train,
+        y_train,
+        test_size=0.2,
+        random_state=options.seed,
+        stratify=stratify,
+    )
+    fit_class_weights = compute_class_weights(y_fit)
     history = model.fit(
-        X_train, y_train,
+        X_fit, y_fit,
         epochs=options.epochs,
         batch_size=options.batch_size,
-        validation_split=0.2,
-        class_weight=class_weights,
+        validation_data=(X_valid, y_valid),
+        class_weight=fit_class_weights,
         callbacks=[
             keras.callbacks.EarlyStopping(
                 monitor="val_loss", patience=15, restore_best_weights=True),
@@ -132,9 +150,9 @@ def _run_nn(options, X_train, X_test, y_train, y_test,
     )
     logger.info("  Training complete.")
 
-    y_pred_proba_train = model.predict(X_train, verbose=0).flatten()
-    opt_threshold, opt_f1 = find_optimal_threshold(y_train, y_pred_proba_train)
-    logger.info(f"  Threshold {opt_threshold:.2f} (F1={opt_f1:.3f})")
+    y_pred_proba_valid = model.predict(X_valid, verbose=0).flatten()
+    opt_threshold, opt_f1 = find_optimal_threshold(y_valid, y_pred_proba_valid)
+    logger.info(f"  Validation-selected threshold {opt_threshold:.2f} (F1={opt_f1:.3f})")
 
     # Swap output_dir pointer so helpers write into nn/
     class _NNOpts:
@@ -160,13 +178,24 @@ def _run_nn(options, X_train, X_test, y_train, y_test,
     )
 
     model.save(os.path.join(nn_dir, "gene_essentiality_model.keras"))
+    with open(os.path.join(nn_dir, "model_schema.json"), "w", encoding="utf-8") as handle:
+        json.dump({
+            "schema_version": 1,
+            "model_type": "nn",
+            "feature_names": list(go_term_columns),
+            "class_mapping": {"viable": 0, "lethal": 1},
+            "positive_class": "lethal",
+            "threshold": float(opt_threshold),
+        }, handle, indent=2, sort_keys=True)
+        handle.write("\n")
     predictions_df.to_csv(os.path.join(nn_dir, "predictions.csv"), index=False)
 
     y_pred_bin = (y_pred_proba_test >= opt_threshold).astype(int).flatten()
     f1_macro = f1_score(y_test, y_pred_bin, average='macro', zero_division=0)
-    cls_rep  = classification_report(y_test, y_pred_bin,
-                                     target_names=label_encoder.classes_,
-                                     output_dict=True)
+    cls_rep = classification_report(
+        y_test, y_pred_bin, labels=[0, 1],
+        target_names=label_encoder.classes_, output_dict=True, zero_division=0,
+    )
     f1_lethal = cls_rep.get('lethal', {}).get('f1-score', float('nan'))
     f1_viable = cls_rep.get('viable', {}).get('f1-score', float('nan'))
 
@@ -181,14 +210,16 @@ def _run_nn(options, X_train, X_test, y_train, y_test,
         rf.write(f"F1_macro:  {f1_macro:.3f}\n")
         rf.write(f"F1_lethal: {f1_lethal:.3f}\n")
         rf.write(f"F1_viable: {f1_viable:.3f}\n")
-        rf.write(f"Threshold: {opt_threshold:.2f}\n")
+        rf.write(f"Validation-selected threshold: {opt_threshold:.2f}\n")
         rf.write(f"Train samples: {len(X_train)}\n")
         rf.write(f"Test  samples: {len(X_test)}\n\n")
         rf.write("Confusion Matrix:\n")
         rf.write(str(confusion_matrix(y_test, y_pred_bin)) + "\n\n")
         rf.write("Classification Report:\n")
-        rf.write(classification_report(y_test, y_pred_bin,
-                                       target_names=label_encoder.classes_))
+        rf.write(classification_report(
+            y_test, y_pred_bin, labels=[0, 1],
+            target_names=label_encoder.classes_, zero_division=0,
+        ))
 
     logger.info(f"  Outputs written to: {nn_dir}/")
     return {
@@ -221,12 +252,12 @@ def main():
     # ── Model selection ───────────────────────────────────────────────────
     model_choices = _ALL_MODELS + ['all']
     parser.add_argument(
-        "-model", nargs="+", default=["nn"],
+        "-model", nargs="+", default=["lr"],
         metavar="MODEL",
         help=(
             "Model(s) to train. Space-separated list or 'all'. "
             f"Choices: {', '.join(model_choices)}. "
-            "Default: nn.  Example: -model nn rf dt"
+            "Default: lr.  Example: -model nn rf dt"
         ),
     )
 
@@ -243,9 +274,16 @@ def main():
                           help="Number of trees for RF and GB (default: 200)")
     sk_group.add_argument("-max_depth", type=int, default=None,
                           help="Max tree depth for DT, RF, GB (default: unlimited)")
+    sk_group.add_argument("-calibration", choices=["none", "sigmoid", "isotonic"],
+                          default="sigmoid",
+                          help="Training-fold probability calibration (default: sigmoid)")
+    sk_group.add_argument("-calibration_cv", type=int, default=3)
+    sk_group.add_argument("-n_jobs", type=int, default=1,
+                          help="Parallel workers inside supported estimators (default: 1)")
 
     # ── Shared parameters ─────────────────────────────────────────────────
     parser.add_argument("-test_size",    type=float, default=0.2)
+    parser.add_argument("-seed", type=int, default=42)
     parser.add_argument("-perm_repeats", type=int,   default=5,
                         help="Permutation repeats for feature importance")
     parser.add_argument("-output_dir",   required=True,
@@ -262,14 +300,72 @@ def main():
                 f"Unknown model '{m}'. Valid choices: {', '.join(model_choices)}")
     models_to_run = _resolve_models(options.model)
 
-    if os.path.exists(options.output_dir) and os.listdir(options.output_dir):
-        if not options.overwrite:
-            parser.error(
-                f"Output directory '{options.output_dir}' is not empty. "
-                "Choose a new directory or pass -overwrite."
+    if bool(options.arff_file) == bool(options.arff_files):
+        parser.error("Provide exactly one of -arff_file or -arff_files")
+    input_files = options.arff_files or [options.arff_file]
+    missing = [path for path in input_files if not os.path.isfile(path)]
+    if missing:
+        parser.error("ARFF file(s) not found: " + ", ".join(missing))
+    if not 0 < options.test_size < 1:
+        parser.error("-test_size must be between 0 and 1")
+    if options.calibration_cv < 2:
+        parser.error("-calibration_cv must be at least 2")
+    if options.n_jobs == 0:
+        parser.error("-n_jobs cannot be 0")
+    if options.arff_files:
+        if not options.dataset_names:
+            options.dataset_names = [
+                f"Dataset_{index + 1}" for index in range(len(options.arff_files))
+            ]
+        elif len(options.dataset_names) != len(options.arff_files):
+            parser.error("Number of dataset names must match number of ARFF files")
+        if len(set(options.dataset_names)) != len(options.dataset_names):
+            parser.error("Dataset names must be unique")
+        safe_names = [
+            re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._") or "dataset"
+            for name in options.dataset_names
+        ]
+        if len(set(safe_names)) != len(safe_names):
+            parser.error("Dataset names collide after filesystem-safe normalization")
+    from .data import load_arff_data, prepare_data
+    from collections import Counter
+    from sklearn.model_selection import train_test_split as validate_split
+
+    for path in input_files:
+        frame, _ = load_arff_data(path)
+        if frame is None:
+            parser.error(f"Could not load ARFF file: {path}")
+        try:
+            _, labels, _, _ = prepare_data(frame)
+        except ValueError as exc:
+            parser.error(f"{path}: {exc}")
+        label_counts = Counter(map(int, labels))
+        if len(label_counts) < 2 or min(label_counts.values()) < 2:
+            parser.error(f"{path}: both classes require at least two genes")
+        try:
+            training_labels, _ = validate_split(
+                labels,
+                test_size=options.test_size,
+                random_state=options.seed,
+                stratify=labels,
             )
-        shutil.rmtree(options.output_dir)
-    os.makedirs(options.output_dir, exist_ok=True)
+            if 'nn' in models_to_run:
+                validate_split(
+                    training_labels,
+                    test_size=0.2,
+                    random_state=options.seed,
+                    stratify=training_labels,
+                )
+        except ValueError as exc:
+            parser.error(f"{path}: invalid stratified test/validation split: {exc}")
+    try:
+        options.output_dir = prepare_output_dir(
+            options.output_dir,
+            options.overwrite,
+            protected_paths=input_files,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     configure_logger("PhenGO.predict",
                      enable_file=True,
@@ -280,18 +376,14 @@ def main():
 
     # ── Comparison mode ───────────────────────────────────────────────────
     if options.arff_files:
-        if not options.dataset_names:
-            options.dataset_names = [f"Dataset_{i+1}"
-                                     for i in range(len(options.arff_files))]
-        elif len(options.dataset_names) != len(options.arff_files):
-            logger.error("Number of dataset names must match number of ARFF files")
-            return
         logger.info("=" * 80)
         logger.info("RUNNING IN COMPARISON MODE")
         logger.info(f"Datasets: {', '.join(options.dataset_names)}")
         logger.info("=" * 80)
         from .compare import compare_datasets
-        compare_datasets(options, options.arff_files, options.dataset_names)
+        compare_datasets(
+            options, options.arff_files, options.dataset_names, models_to_run,
+        )
         logger.info("COMPARISON ANALYSIS COMPLETE")
         logger.info(f"Results saved to: {options.output_dir}")
 
@@ -318,7 +410,7 @@ def main():
         X_train, X_test, y_train, y_test, genes_train, genes_test = train_test_split(
             X, y, gene_names,
             test_size=options.test_size,
-            random_state=42,
+            random_state=options.seed,
             stratify=y,
         )
 
